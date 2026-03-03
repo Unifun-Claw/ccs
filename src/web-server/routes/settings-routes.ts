@@ -32,6 +32,7 @@ import {
   extractProviderFromPathname,
   getDeniedModelIdReasonForProvider,
 } from '../../cliproxy/model-id-normalizer';
+import { createRouteErrorHelpers } from './route-helpers';
 
 const router = Router();
 const MODEL_ENV_KEYS = [
@@ -42,23 +43,7 @@ const MODEL_ENV_KEYS = [
 ] as const;
 const PRESET_MODEL_KEYS = ['default', 'opus', 'sonnet', 'haiku'] as const;
 
-function logRouteError(context: string, error: unknown): void {
-  if (error instanceof Error) {
-    console.error(`[settings-routes] ${context}: ${error.message}`);
-    return;
-  }
-  console.error(`[settings-routes] ${context}: unknown error`);
-}
-
-function respondInternalError(
-  res: Response,
-  error: unknown,
-  fallbackMessage: string,
-  statusCode = 500
-): void {
-  logRouteError(fallbackMessage, error);
-  res.status(statusCode).json({ error: fallbackMessage });
-}
+const { logRouteError, respondInternalError } = createRouteErrorHelpers('settings-routes');
 
 function isLoopbackAddress(value: string | undefined): boolean {
   if (!value) return false;

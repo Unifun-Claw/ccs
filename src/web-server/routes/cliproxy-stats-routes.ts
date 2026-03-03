@@ -100,62 +100,21 @@ function isQuotaRouteRateLimited(req: Request, provider: string): boolean {
 }
 
 /**
- * Cache only stable failures; avoid pinning transient network failures (timeouts, 429s).
+ * Cache only stable failures; skip transient network errors (timeouts, 429s, 5xx).
+ * Generic across all quota result types.
  */
-function shouldCacheCodexQuotaResult(result: CodexQuotaResult): boolean {
+function shouldCacheQuotaResult(result: {
+  success: boolean;
+  needsReauth?: boolean;
+  isForbidden?: boolean;
+  error?: string;
+}): boolean {
   if (result.success) return true;
   if (result.needsReauth || result.isForbidden) return true;
-
   const msg = (result.error || '').toLowerCase();
   if (!msg) return false;
-  if (msg.includes('timeout')) return false;
-  if (msg.includes('rate limited')) return false;
-  if (msg.includes('api error: 5')) return false;
-  if (msg.includes('fetch failed')) return false;
-
-  return false;
-}
-
-function shouldCacheGeminiQuotaResult(result: GeminiCliQuotaResult): boolean {
-  if (result.success) return true;
-  if (result.needsReauth) return true;
-
-  const msg = (result.error || '').toLowerCase();
-  if (!msg) return false;
-  if (msg.includes('timeout')) return false;
-  if (msg.includes('rate limited')) return false;
-  if (msg.includes('api error: 5')) return false;
-  if (msg.includes('fetch failed')) return false;
-
-  return false;
-}
-
-function shouldCacheClaudeQuotaResult(result: ClaudeQuotaResult): boolean {
-  if (result.success) return true;
-  if (result.needsReauth) return true;
-
-  const msg = (result.error || '').toLowerCase();
-  if (!msg) return false;
-  if (msg.includes('timeout')) return false;
-  if (msg.includes('rate limited')) return false;
-  if (msg.includes('api error: 5')) return false;
-  if (msg.includes('fetch failed')) return false;
-
-  return false;
-}
-
-function shouldCacheGhcpQuotaResult(result: GhcpQuotaResult): boolean {
-  if (result.success) return true;
-  if (result.needsReauth) return true;
-
-  const msg = (result.error || '').toLowerCase();
-  if (!msg) return false;
-  if (msg.includes('timeout')) return false;
-  if (msg.includes('rate limited')) return false;
-  if (msg.includes('api error: 5')) return false;
-  if (msg.includes('fetch failed')) return false;
-
-  return false;
+  const transientPatterns = ['timeout', 'rate limited', 'api error: 5', 'fetch failed'];
+  return !transientPatterns.some((p) => msg.includes(p));
 }
 
 /** Get configured backend from config */
@@ -169,20 +128,21 @@ function getConfiguredBackend() {
 }
 
 /**
- * Extract status code and model from error log file (lightweight parsing)
- * Reads first 4KB for model, last 2KB for status code
+ * Extract status code and model from error log file (lightweight parsing).
+ * Reads first 4KB for model, last 2KB for status code. Async to avoid blocking event loop.
  */
 async function extractErrorLogMetadata(
   filePath: string
 ): Promise<{ statusCode?: number; model?: string }> {
+  let fh: fs.promises.FileHandle | null = null;
   try {
-    const fd = fs.openSync(filePath, 'r');
-    const stat = fs.fstatSync(fd);
+    fh = await fs.promises.open(filePath, 'r');
+    const stat = await fh.stat();
     const fileSize = stat.size;
 
     // Read first 4KB for model (in request body)
     const startBuffer = Buffer.alloc(Math.min(4096, fileSize));
-    fs.readSync(fd, startBuffer, 0, startBuffer.length, 0);
+    await fh.read(startBuffer, 0, startBuffer.length, 0);
     const startContent = startBuffer.toString('utf-8');
 
     // Extract model from request body JSON: "model":"gemini-3-flash-preview"
@@ -193,7 +153,7 @@ async function extractErrorLogMetadata(
     let statusCode: number | undefined;
     if (fileSize > 2048) {
       const endBuffer = Buffer.alloc(2048);
-      fs.readSync(fd, endBuffer, 0, 2048, fileSize - 2048);
+      await fh.read(endBuffer, 0, 2048, fileSize - 2048);
       const endContent = endBuffer.toString('utf-8');
       const statusMatch = endContent.match(/Status:\s*(\d{3})/);
       statusCode = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
@@ -203,10 +163,11 @@ async function extractErrorLogMetadata(
       statusCode = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
     }
 
-    fs.closeSync(fd);
     return { statusCode, model };
   } catch {
     return {};
+  } finally {
+    await fh?.close();
   }
 }
 
@@ -237,7 +198,8 @@ const handleStatsRequest = async (_req: Request, res: Response): Promise<void> =
 
     res.json(stats);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 
@@ -261,7 +223,8 @@ router.get('/status', async (_req: Request, res: Response): Promise<void> => {
     const running = await isCliproxyRunning();
     res.json({ running });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -297,7 +260,8 @@ router.get('/proxy-status', async (_req: Request, res: Response): Promise<void> 
       res.json(sessionStatus);
     }
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -311,7 +275,8 @@ router.post('/proxy-start', async (_req: Request, res: Response): Promise<void> 
     const result = await ensureCliproxyService();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -324,7 +289,8 @@ router.post('/proxy-stop', async (_req: Request, res: Response): Promise<void> =
     const result = await stopProxy();
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -338,7 +304,8 @@ router.get('/update-check', async (_req: Request, res: Response): Promise<void> 
     const result = await checkCliproxyUpdate(backend);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -370,7 +337,8 @@ router.get('/models', async (_req: Request, res: Response): Promise<void> => {
 
     res.json(modelsResponse);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -417,7 +385,8 @@ router.get('/error-logs', async (_req: Request, res: Response): Promise<void> =>
 
     res.json({ files: filesWithMetadata });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -456,7 +425,8 @@ router.get('/error-logs/:name', async (req: Request, res: Response): Promise<voi
 
     res.type('text/plain').send(content);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -477,7 +447,8 @@ router.get('/config.yaml', async (_req: Request, res: Response): Promise<void> =
     const content = fs.readFileSync(configPath, 'utf8');
     res.type('text/yaml').send(content);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -510,7 +481,8 @@ router.put('/config.yaml', async (req: Request, res: Response): Promise<void> =>
 
     res.json({ success: true, path: configPath });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -544,7 +516,8 @@ router.get('/auth-files', async (_req: Request, res: Response): Promise<void> =>
 
     res.json({ files, directory: authDir });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -580,7 +553,8 @@ router.get('/auth-files/download', async (req: Request, res: Response): Promise<
     res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
     res.type('application/octet-stream').send(content);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -667,7 +641,8 @@ router.put('/models/:provider', async (req: Request, res: Response): Promise<voi
 
     res.json({ success: true, provider, model: canonicalModel });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -712,13 +687,14 @@ router.get('/quota/codex/:accountId', async (req: Request, res: Response): Promi
     const result = await fetchCodexQuota(accountId);
 
     // Cache successful and stable failure states; skip transient network failures.
-    if (shouldCacheCodexQuotaResult(result)) {
+    if (shouldCacheQuotaResult(result)) {
       setCachedQuota('codex', accountId, result);
     }
 
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -759,13 +735,14 @@ router.get('/quota/claude/:accountId', async (req: Request, res: Response): Prom
     const result = await fetchClaudeQuota(accountId);
 
     // Cache successful and stable failure states; skip transient network failures.
-    if (shouldCacheClaudeQuotaResult(result)) {
+    if (shouldCacheQuotaResult(result)) {
       setCachedQuota('claude', accountId, result);
     }
 
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -806,13 +783,14 @@ router.get('/quota/gemini/:accountId', async (req: Request, res: Response): Prom
     const result = await fetchGeminiCliQuota(accountId);
 
     // Cache successful and stable failure states; skip transient network failures.
-    if (shouldCacheGeminiQuotaResult(result)) {
+    if (shouldCacheQuotaResult(result)) {
       setCachedQuota('gemini', accountId, result);
     }
 
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -853,13 +831,14 @@ router.get('/quota/ghcp/:accountId', async (req: Request, res: Response): Promis
     const result = await fetchGhcpQuota(accountId);
 
     // Cache successful and stable failure states; skip transient network failures.
-    if (shouldCacheGhcpQuotaResult(result)) {
+    if (shouldCacheQuotaResult(result)) {
       setCachedQuota('ghcp', accountId, result);
     }
 
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -917,7 +896,8 @@ router.get('/quota/:provider/:accountId', async (req: Request, res: Response): P
 
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -940,7 +920,8 @@ router.get('/versions', async (_req: Request, res: Response): Promise<void> => {
       faultyRange: CLIPROXY_FAULTY_RANGE,
     });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1004,7 +985,8 @@ router.post('/install', async (req: Request, res: Response): Promise<void> => {
       message: `Successfully installed CLIProxy Plus v${version}`,
     });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1029,7 +1011,8 @@ router.post('/restart', async (_req: Request, res: Response): Promise<void> => {
       res.json({ success: false, error: startResult.error || 'Failed to start proxy' });
     }
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    console.error(`[cliproxy-stats] ${(error as Error).message}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

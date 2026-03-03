@@ -50,29 +50,14 @@ import {
   validateAntigravityRiskAcknowledgement,
   isAntigravityResponsibilityBypassEnabled,
 } from '../../cliproxy/antigravity-responsibility';
+import { createRouteErrorHelpers } from './route-helpers';
 
 const router = Router();
 
 // Valid providers list - derived from canonical CLIPROXY_PROFILES
 const validProviders: CLIProxyProvider[] = [...CLIPROXY_PROFILES];
 
-function logRouteError(context: string, error: unknown): void {
-  if (error instanceof Error) {
-    console.error(`[cliproxy-auth-routes] ${context}: ${error.message}`);
-    return;
-  }
-  console.error(`[cliproxy-auth-routes] ${context}: unknown error`);
-}
-
-function respondInternalError(
-  res: Response,
-  error: unknown,
-  fallbackMessage: string,
-  statusCode = 500
-): void {
-  logRouteError(fallbackMessage, error);
-  res.status(statusCode).json({ error: fallbackMessage });
-}
+const { respondInternalError } = createRouteErrorHelpers('cliproxy-auth-routes');
 
 function parseKiroMethod(raw: unknown): { method: KiroAuthMethod; invalid: boolean } {
   if (raw === undefined || raw === null) {

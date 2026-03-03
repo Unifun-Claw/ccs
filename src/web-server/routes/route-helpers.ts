@@ -4,6 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Response } from 'express';
 import { getCcsDir, getConfigPath, loadConfigSafe, loadSettings } from '../../utils/config-manager';
 import { expandPath } from '../../utils/helpers';
 import { getClaudeSettingsPath } from '../../utils/claude-config-path';
@@ -16,6 +17,7 @@ import {
 } from '../../cliproxy/model-id-normalizer';
 import type { CLIProxyProvider } from '../../cliproxy/types';
 import type { Config, Settings } from '../../types/config';
+import type { TargetType } from '../../targets/target-adapter';
 import { ValidationError } from '../../errors/error-types';
 
 /** Model mapping for API profiles */
@@ -388,4 +390,59 @@ export function validateFilePath(filePath: string): {
   }
 
   return { valid: false, readonly: false, error: 'Access to this path is not allowed' };
+}
+
+/**
+ * Parse and validate a target param (claude/droid). Returns null if invalid/absent.
+ * Shared by profile-routes and variant-routes.
+ */
+export function parseTarget(rawTarget: unknown): TargetType | null {
+  if (rawTarget === undefined || rawTarget === null || rawTarget === '') {
+    return null;
+  }
+
+  if (typeof rawTarget !== 'string') {
+    return null;
+  }
+
+  const normalized = rawTarget.trim().toLowerCase();
+  if (normalized === 'claude' || normalized === 'droid') {
+    return normalized;
+  }
+
+  return null;
+}
+
+/**
+ * Create route-specific error helpers with a log prefix.
+ * Eliminates duplicate logRouteError/respondInternalError in each route file.
+ */
+export function createRouteErrorHelpers(prefix: string): {
+  logRouteError: (context: string, error: unknown) => void;
+  respondInternalError: (
+    res: Response,
+    error: unknown,
+    fallbackMessage: string,
+    statusCode?: number
+  ) => void;
+} {
+  function logRouteError(context: string, error: unknown): void {
+    if (error instanceof Error) {
+      console.error(`[${prefix}] ${context}: ${error.message}`);
+      return;
+    }
+    console.error(`[${prefix}] ${context}: unknown error`);
+  }
+
+  function respondInternalError(
+    res: Response,
+    error: unknown,
+    fallbackMessage: string,
+    statusCode = 500
+  ): void {
+    logRouteError(fallbackMessage, error);
+    res.status(statusCode).json({ error: fallbackMessage });
+  }
+
+  return { logRouteError, respondInternalError };
 }
