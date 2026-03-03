@@ -16,6 +16,7 @@ import {
 } from '../../cliproxy/model-id-normalizer';
 import type { CLIProxyProvider } from '../../cliproxy/types';
 import type { Config, Settings } from '../../types/config';
+import { ValidationError } from '../../errors/error-types';
 
 /** Model mapping for API profiles */
 export interface ModelMapping {
@@ -155,7 +156,7 @@ export function createSettingsFile(
     canonicalHaikuModel,
   ]);
   if (deniedReason) {
-    throw new Error(deniedReason);
+    throw new ValidationError(deniedReason, 'model');
   }
   const droidProvider = resolveDroidProvider({
     provider,
@@ -237,7 +238,7 @@ export function updateSettingsFile(
       : settings.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL,
   ]);
   if (deniedReason) {
-    throw new Error(deniedReason);
+    throw new ValidationError(deniedReason, 'model');
   }
 
   if (updates.baseUrl) {

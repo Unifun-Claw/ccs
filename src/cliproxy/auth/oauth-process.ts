@@ -304,8 +304,12 @@ async function handleTokenNotFound(
   console.log('');
 
   if (failureReason) {
+    // Sanitize internal URLs/paths from failure reason to avoid leaking infrastructure details
+    const sanitizedReason = failureReason
+      .replace(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)[^\s]*/gi, '[internal-url]')
+      .replace(/\/(?:root|home|opt|tmp|var)\/[^\s]*/g, '[path]');
     console.log(fail('Authentication completed but token was not persisted'));
-    console.log(`    ${failureReason}`);
+    console.log(`    ${sanitizedReason}`);
     console.log('');
     console.log('This usually means provider-side authorization was accepted,');
     console.log('but CLIProxy failed a post-auth verification or token save step.');

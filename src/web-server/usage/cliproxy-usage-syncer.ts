@@ -34,6 +34,12 @@ interface CliproxyUsageSnapshot {
 
 const SNAPSHOT_VERSION = 1;
 
+/** Sync interval in ms, configurable via CCS_CLIPROXY_SYNC_INTERVAL env var (default: 5 min) */
+const SYNC_INTERVAL_MS = Math.max(
+  30_000,
+  parseInt(process.env.CCS_CLIPROXY_SYNC_INTERVAL ?? '300000', 10) || 300_000
+);
+
 // Module-level interval ID
 let syncIntervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -149,17 +155,15 @@ export function startCliproxySync(): void {
     return;
   }
 
-  console.log(info('Starting CLIProxy usage sync (interval: 5 min)'));
+  const intervalMin = Math.round(SYNC_INTERVAL_MS / 60_000);
+  console.log(info(`Starting CLIProxy usage sync (interval: ${intervalMin} min)`));
 
   // Fire-and-forget initial sync
   void syncCliproxyUsage();
 
-  syncIntervalId = setInterval(
-    () => {
-      void syncCliproxyUsage();
-    },
-    5 * 60 * 1000
-  );
+  syncIntervalId = setInterval(() => {
+    void syncCliproxyUsage();
+  }, SYNC_INTERVAL_MS);
 }
 
 /**

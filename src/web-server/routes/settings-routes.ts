@@ -78,10 +78,10 @@ function requireSensitiveLocalAccess(req: Request, res: Response): boolean {
     return true;
   }
 
-  const forwarded = req.headers['x-forwarded-for'];
-  const firstForwarded =
-    typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : undefined;
-  const candidateAddress = firstForwarded || req.socket.remoteAddress || req.ip;
+  // Use only socket-level address for security decisions.
+  // X-Forwarded-For is trivially spoofable and must NOT be trusted
+  // without an explicit trust proxy configuration.
+  const candidateAddress = req.socket.remoteAddress;
 
   if (isLoopbackAddress(candidateAddress)) {
     return true;

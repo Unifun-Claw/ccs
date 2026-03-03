@@ -378,8 +378,17 @@ async function refreshFromSourceCoalesced(force = false): Promise<{
   monthly: MonthlyUsage[];
   session: SessionUsage[];
 }> {
+  // Wait for any in-flight refresh to finish before starting a forced one
+  // to prevent concurrent refreshes competing for the same resources
+  if (force && pendingFullRefresh) {
+    await pendingFullRefresh.catch(() => {});
+  }
+
   if (force) {
-    return refreshFromSource();
+    pendingFullRefresh = refreshFromSource().finally(() => {
+      pendingFullRefresh = null;
+    });
+    return pendingFullRefresh;
   }
 
   if (pendingFullRefresh) {

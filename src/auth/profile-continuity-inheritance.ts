@@ -52,13 +52,11 @@ function loadLegacyContinuityInheritanceMap(): Record<string, string> {
 
     return normalized;
   } catch (error) {
-    if (process.env.CCS_DEBUG) {
-      console.error(
-        warn(
-          `Failed to parse legacy continuity mapping at "${configJsonPath}": ${(error as Error).message}`
-        )
-      );
-    }
+    console.error(
+      warn(
+        `Failed to parse legacy continuity mapping at "${configJsonPath}": ${(error as Error).message}`
+      )
+    );
     return {};
   }
 }

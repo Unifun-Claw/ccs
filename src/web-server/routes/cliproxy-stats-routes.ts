@@ -77,6 +77,16 @@ function buildQuotaRateLimitKey(req: Request, provider: string): string {
 function isQuotaRouteRateLimited(req: Request, provider: string): boolean {
   const key = buildQuotaRateLimitKey(req, provider);
   const now = Date.now();
+
+  // Evict stale entries to prevent unbounded memory growth
+  if (quotaRateLimits.size > 1000) {
+    for (const [k, v] of quotaRateLimits) {
+      if (now - v.windowStart >= QUOTA_RATE_LIMIT_WINDOW_MS * 2) {
+        quotaRateLimits.delete(k);
+      }
+    }
+  }
+
   const current = quotaRateLimits.get(key);
 
   if (!current || now - current.windowStart >= QUOTA_RATE_LIMIT_WINDOW_MS) {
@@ -584,10 +594,22 @@ router.get('/auth-files/download', async (req: Request, res: Response): Promise<
 router.put('/models/:provider', async (req: Request, res: Response): Promise<void> => {
   try {
     const { provider } = req.params;
+
+    // Validate provider name to prevent path traversal via crafted provider param
+    if (!provider || provider.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(provider)) {
+      res.status(400).json({ error: 'Invalid provider name' });
+      return;
+    }
+
     const { model } = req.body;
 
     if (!model || typeof model !== 'string') {
       res.status(400).json({ error: 'Missing required field: model' });
+      return;
+    }
+
+    if (model.length > 256) {
+      res.status(400).json({ error: 'Model ID exceeds maximum length (256 characters)' });
       return;
     }
 
