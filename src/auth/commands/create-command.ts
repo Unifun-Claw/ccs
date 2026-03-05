@@ -111,6 +111,9 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
   const previousUnifiedProfile = existsUnified
     ? ctx.registry.getAllAccountsUnified()[profileName]
     : undefined;
+  const previousBare =
+    previousLegacyProfile?.bare === true || previousUnifiedProfile?.bare === true;
+  const effectiveBare = bare === true || (profileExistedBeforeCreate && previousBare);
   const previousContextPolicy =
     profileExistedBeforeCreate && (previousUnifiedProfile || previousLegacyProfile)
       ? resolveAccountContextPolicy(previousUnifiedProfile || previousLegacyProfile)
@@ -169,7 +172,9 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
 
     if (previousContextPolicy) {
       try {
-        await ctx.instanceMgr.ensureInstance(profileName, previousContextPolicy);
+        await ctx.instanceMgr.ensureInstance(profileName, previousContextPolicy, {
+          bare: previousBare,
+        });
       } catch {
         // Best-effort rollback for context mode/group.
       }
@@ -180,7 +185,7 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
     // Create instance directory
     console.log(info(`Creating profile: ${profileName}`));
     const instancePath = await ctx.instanceMgr.ensureInstance(profileName, contextPolicy, {
-      bare: !!bare,
+      bare: effectiveBare,
     });
 
     // Create/update profile entry based on config mode
@@ -190,13 +195,13 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
         ctx.registry.updateAccountUnified(profileName, {
           context_mode: contextMetadata.context_mode,
           context_group: contextMetadata.context_group,
-          ...(bare ? { bare: true } : {}),
+          ...(effectiveBare ? { bare: true } : {}),
         });
         ctx.registry.touchAccountUnified(profileName);
       } else {
         ctx.registry.createAccountUnified(profileName, {
           ...contextMetadata,
-          ...(bare ? { bare: true } : {}),
+          ...(effectiveBare ? { bare: true } : {}),
         });
       }
     } else {
@@ -206,14 +211,14 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
           type: 'account',
           context_mode: contextMetadata.context_mode,
           context_group: contextMetadata.context_group,
-          ...(bare ? { bare: true } : {}),
+          ...(effectiveBare ? { bare: true } : {}),
         });
       } else {
         ctx.registry.createProfile(profileName, {
           type: 'account',
           context_mode: contextMetadata.context_mode,
           context_group: contextMetadata.context_group,
-          ...(bare ? { bare: true } : {}),
+          ...(effectiveBare ? { bare: true } : {}),
         });
       }
     }
@@ -271,7 +276,7 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
               `Instance: ${instancePath}\n` +
               `Type:     account\n` +
               `Context:  ${formatAccountContextPolicy(contextPolicy)}` +
-              (bare ? '\nMode:     bare (no shared symlinks)' : ''),
+              (effectiveBare ? '\nMode:     bare (no shared symlinks)' : ''),
             'Profile Created'
           )
         );

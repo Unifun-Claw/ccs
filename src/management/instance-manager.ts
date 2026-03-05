@@ -14,7 +14,7 @@ import { AccountContextPolicy, DEFAULT_ACCOUNT_CONTEXT_MODE } from '../auth/acco
 import { getCcsDir, getCcsHome } from '../utils/config-manager';
 
 /** Options for instance creation */
-interface InstanceOptions {
+export interface InstanceOptions {
   /** Skip shared symlinks (commands, skills, agents, settings.json) */
   bare?: boolean;
 }
@@ -108,9 +108,6 @@ class InstanceManager {
       if (!options.bare) {
         this.sharedManager.linkSharedDirectories(instancePath);
       }
-
-      // Copy global configs if exist (settings.json only)
-      this.copyGlobalConfigs(instancePath);
     } catch (error) {
       throw new Error(
         `Failed to initialize instance for ${profileName}: ${(error as Error).message}`
@@ -181,32 +178,30 @@ class InstanceManager {
   }
 
   /**
-   * Copy global configs to instance (optional)
-   */
-  private copyGlobalConfigs(_instancePath: string): void {
-    // No longer needed - settings.json now symlinked via SharedManager
-  }
-
-  /**
    * Sync MCP servers from global ~/.claude.json to instance .claude.json.
    * Selectively copies only mcpServers key (not OAuth sessions or caches).
    */
-  syncMcpServers(instancePath: string): void {
+  syncMcpServers(instancePath: string): boolean {
     const homeDir = getCcsHome();
     const globalClaudeJson = path.join(homeDir, '.claude.json');
 
     if (!fs.existsSync(globalClaudeJson)) {
-      return;
+      return false;
     }
 
     try {
       const globalContent = JSON.parse(fs.readFileSync(globalClaudeJson, 'utf8'));
-      const mcpServers = globalContent.mcpServers;
-
-      if (!mcpServers || Object.keys(mcpServers).length === 0) {
-        return;
+      const rawMcpServers = globalContent.mcpServers;
+      if (
+        !rawMcpServers ||
+        typeof rawMcpServers !== 'object' ||
+        Array.isArray(rawMcpServers) ||
+        Object.keys(rawMcpServers).length === 0
+      ) {
+        return false;
       }
 
+      const mcpServers = rawMcpServers as Record<string, unknown>;
       const instanceClaudeJson = path.join(instancePath, '.claude.json');
       let instanceContent: Record<string, unknown> = {};
 
@@ -220,12 +215,22 @@ class InstanceManager {
       }
 
       // Merge: global MCP servers as base, instance-specific overrides on top
-      const existingMcp = (instanceContent.mcpServers as Record<string, unknown> | undefined) || {};
+      const rawExistingMcp = instanceContent.mcpServers;
+      const existingMcp =
+        rawExistingMcp && typeof rawExistingMcp === 'object' && !Array.isArray(rawExistingMcp)
+          ? (rawExistingMcp as Record<string, unknown>)
+          : {};
       instanceContent.mcpServers = { ...mcpServers, ...existingMcp };
 
-      fs.writeFileSync(instanceClaudeJson, JSON.stringify(instanceContent, null, 2), 'utf8');
-    } catch {
+      fs.writeFileSync(instanceClaudeJson, JSON.stringify(instanceContent, null, 2), {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+      return true;
+    } catch (error) {
       // Best-effort: don't fail instance creation if MCP sync fails
+      console.warn(`[!] MCP sync skipped: ${(error as Error).message}`);
+      return false;
     }
   }
 

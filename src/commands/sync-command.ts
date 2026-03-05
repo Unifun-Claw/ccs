@@ -53,9 +53,13 @@ export async function handleSyncCommand(): Promise<void> {
     if (profile.bare) {
       continue; // Skip bare profiles
     }
+
+    if (!instanceMgr.hasInstance(name)) {
+      continue;
+    }
+
     const instancePath = instanceMgr.getInstancePath(name);
-    if (instancePath) {
-      instanceMgr.syncMcpServers(instancePath);
+    if (instanceMgr.syncMcpServers(instancePath)) {
       mcpSynced++;
     }
   }
