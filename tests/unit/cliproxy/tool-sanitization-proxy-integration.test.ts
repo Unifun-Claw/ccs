@@ -384,7 +384,7 @@ describe('ToolSanitizationProxy Integration', () => {
       }
     });
 
-    it('strips Codex-unsupported top-level tool fields before forwarding', async () => {
+    it('strips only Codex-unsupported top-level tool fields before forwarding', async () => {
       const proxy = new ToolSanitizationProxy({
         upstreamBaseUrl: `http://127.0.0.1:${mockUpstreamPort}`,
       });
@@ -422,7 +422,7 @@ describe('ToolSanitizationProxy Integration', () => {
         expect(sentTools[0].name).toBe('codex_tool');
         expect(sentTools[0].description).toBe('Codex test');
         expect(sentTools[0].cache_control).toBeUndefined();
-        expect(sentTools[0].defer_loading).toBeUndefined();
+        expect(sentTools[0].defer_loading).toBe(true);
         expect(sentTools[0].input_schema).toEqual({
           type: 'object',
           properties: {
@@ -436,57 +436,64 @@ describe('ToolSanitizationProxy Integration', () => {
       }
     });
 
-    it('strips Codex-unsupported top-level tool fields on root model-routed requests', async () => {
-      const proxy = new ToolSanitizationProxy({
-        upstreamBaseUrl: `http://127.0.0.1:${mockUpstreamPort}`,
-      });
-      const port = await proxy.start();
+    for (const model of [
+      'gpt-5.3-codex-xhigh',
+      'gpt-5.1-codex-mini',
+      'gpt-5.1-codex',
+      'gpt-5-codex',
+    ]) {
+      it(`strips only Codex-unsupported top-level tool fields on root model-routed request (${model})`, async () => {
+        const proxy = new ToolSanitizationProxy({
+          upstreamBaseUrl: `http://127.0.0.1:${mockUpstreamPort}`,
+        });
+        const port = await proxy.start();
 
-      try {
-        await fetch(`http://127.0.0.1:${port}/v1/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'gpt-5.3-codex-xhigh',
-            tools: [
-              {
-                name: 'root_codex_tool',
-                description: 'Root-routed Codex test',
-                cache_control: { type: 'ephemeral' },
-                defer_loading: true,
-                input_schema: {
-                  type: 'object',
-                  properties: {
-                    prompt: {
-                      type: 'string',
-                      examples: ['fix the failing test'],
+        try {
+          await fetch(`http://127.0.0.1:${port}/v1/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model,
+              tools: [
+                {
+                  name: 'root_codex_tool',
+                  description: 'Root-routed Codex test',
+                  cache_control: { type: 'ephemeral' },
+                  defer_loading: true,
+                  input_schema: {
+                    type: 'object',
+                    properties: {
+                      prompt: {
+                        type: 'string',
+                        examples: ['fix the failing test'],
+                      },
                     },
                   },
                 },
-              },
-            ],
-          }),
-        });
+              ],
+            }),
+          });
 
-        const sentTools = (lastRequest!.body as Record<string, unknown>).tools as Array<
-          Record<string, unknown>
-        >;
-        expect(sentTools[0].name).toBe('root_codex_tool');
-        expect(sentTools[0].description).toBe('Root-routed Codex test');
-        expect(sentTools[0].cache_control).toBeUndefined();
-        expect(sentTools[0].defer_loading).toBeUndefined();
-        expect(sentTools[0].input_schema).toEqual({
-          type: 'object',
-          properties: {
-            prompt: {
-              type: 'string',
+          const sentTools = (lastRequest!.body as Record<string, unknown>).tools as Array<
+            Record<string, unknown>
+          >;
+          expect(sentTools[0].name).toBe('root_codex_tool');
+          expect(sentTools[0].description).toBe('Root-routed Codex test');
+          expect(sentTools[0].cache_control).toBeUndefined();
+          expect(sentTools[0].defer_loading).toBe(true);
+          expect(sentTools[0].input_schema).toEqual({
+            type: 'object',
+            properties: {
+              prompt: {
+                type: 'string',
+              },
             },
-          },
-        });
-      } finally {
-        proxy.stop();
-      }
-    });
+          });
+        } finally {
+          proxy.stop();
+        }
+      });
+    }
 
     it('preserves top-level tool fields for non-target root routes', async () => {
       const proxy = new ToolSanitizationProxy({

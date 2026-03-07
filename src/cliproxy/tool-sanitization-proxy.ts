@@ -54,15 +54,32 @@ const GEMINI_UNSUPPORTED_TOOL_FIELDS = new Set([
   'defer_loading',
 ]);
 
-const CODEX_UNSUPPORTED_TOOL_FIELDS = new Set(['cache_control', 'defer_loading']);
+const CODEX_UNSUPPORTED_TOOL_FIELDS = new Set(['cache_control']);
+const EXTENDED_CONTEXT_SUFFIX_REGEX = /\[1m\]$/i;
+const LEGACY_CODEX_MODEL_ID_REGEX = /^gpt-5(?:\.\d+)?-codex(?:-(?:mini|max))?$/i;
+
+function canonicalizeCodexModelId(model: string | undefined): string | null {
+  const normalizedModel = model?.trim().toLowerCase();
+  if (!normalizedModel) {
+    return null;
+  }
+
+  const withoutExtendedContext = normalizedModel.replace(EXTENDED_CONTEXT_SUFFIX_REGEX, '').trim();
+  return stripCodexEffortSuffix(withoutExtendedContext);
+}
 
 function isKnownCodexModelId(model: string | undefined): boolean {
-  const normalizedModel = model?.trim().toLowerCase();
+  const normalizedModel = canonicalizeCodexModelId(model);
   if (!normalizedModel) {
     return false;
   }
 
-  return getModelMaxLevel('codex', stripCodexEffortSuffix(normalizedModel)) !== undefined;
+  // Root-routed requests can carry Codex model IDs that CCS uses outside the
+  // small interactive catalog (for example image analysis and Cursor defaults).
+  return (
+    LEGACY_CODEX_MODEL_ID_REGEX.test(normalizedModel) ||
+    getModelMaxLevel('codex', normalizedModel) !== undefined
+  );
 }
 
 function getUnsupportedToolFields(
