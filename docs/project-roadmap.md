@@ -1,6 +1,6 @@
 # CCS Project Roadmap
 
-Last Updated: 2026-01-06
+Last Updated: 2026-02-12
 
 Forward-looking roadmap documenting current priorities, GitHub issues, and future feature plans.
 
@@ -20,22 +20,33 @@ All major modularization work is complete. The codebase evolved from monolithic 
 | 6 | Settings Page | `pages/settings/` (1,781->20 files) |
 | 7 | Analytics Page | `pages/analytics/` (420->8 files) |
 | 8 | Auth Monitor | `monitoring/auth-monitor/` (465->8 files) |
-| 9 | Test Infrastructure | 99 UI tests + 539 CLI tests, 90% coverage |
+| 9 | Test Infrastructure | 1407 tests, 90% coverage |
 | 10 | Remote CLIProxy | `proxy-config-resolver.ts`, `remote-proxy-client.ts` |
 | 11 | Kiro + ghcp Providers | OAuth support via CLIProxyAPIPlus (v7.2) |
 | 12 | Hybrid Quota Management | `quota-manager.ts`, `quota-fetcher.ts` (v7.14) |
 | 13 | Docker Support | `docker/` directory with Dockerfile, Compose, entrypoint |
+| 14 | Image Analysis Hook | Vision proxying via CLIProxy transformers (v7.34) |
+| 15 | Third-Party Tool Integration | `ccs env` command with multi-format export (v7.39) |
 
 **Metrics Achieved**:
 - Files >500 lines: 12 -> 5 (-58%)
 - UI files >200 lines: 28 -> 8 (-71%)
 - Barrel exports: 5 -> 39 (+680%)
 - Test coverage: 0% -> 90%
-- Total tests: 638 (539 CLI + 99 UI)
+- Total tests: 1440 (6 skipped)
 
 ---
 
 ## Current Status
+
+### Maintainability Hardening Kickoff
+
+- Issue owner: Stream D for **#542**
+- Automated inventory command: `bun run report:hardening`
+- Generated report artifacts:
+  - `docs/reports/hardening-inventory.json`
+  - `docs/reports/hardening-inventory.md`
+- Debt burndown tracker: [Hardening Debt Burndown Tracker](./hardening-debt-burndown.md)
 
 ### Remaining Large Files (Acceptable)
 
@@ -75,6 +86,7 @@ All major modularization work is complete. The codebase evolved from monolithic 
 |-------|-------|------|
 | #137 | CCS Cannot Connect to IDE, but Native Claude Works | support |
 | #89 | Add Claude Code CLI flag passthrough for delegation | enhancement |
+| #659 | Comprehensive Vietnamese i18n for dashboard | enhancement |
 
 ### Low Priority / Questions
 
@@ -168,6 +180,8 @@ worktrees:
 | Kiro + GitHub Copilot OAuth (#157) | COMPLETE | v7.2 |
 | Hybrid Quota Management | COMPLETE | v7.14 |
 | Docker Support (PR #345) | COMPLETE | v7.23 |
+| Image Analysis Hook | COMPLETE | v7.34 |
+| Third-Party Tool Integration | COMPLETE | v7.39 |
 | Critical Bug Fixes (#158, #155, #124) | PLANNED | Q1 2026 |
 | Multiple CLIProxyAPI Instances | PLANNED | Q1 2026 |
 | Git Worktree Support | PLANNED | Q2 2026 |
@@ -187,6 +201,29 @@ All criteria achieved:
 - [x] Clear domain boundaries
 - [x] Consistent naming conventions
 
+## Maintainability Gate (Issue #539 Foundation)
+
+- Baseline metrics artifact: `docs/metrics/maintainability-baseline.json`
+- Branch-aware gate wrapper: `scripts/maintainability-check.js`
+- Generate or refresh baseline:
+  - `bun run maintainability:baseline`
+  - `npm run maintainability:baseline`
+- Run regression check gate:
+  - `bun run maintainability:check`
+  - `npm run maintainability:check`
+  - `bun run maintainability:check:strict` (force strict locally)
+
+The baseline/check scripts enumerate git-tracked files under `src` for deterministic results and fail fast if git file listing is unavailable.
+
+Default gate behavior:
+- strict mode on protected branches (`main`, `dev`, `hotfix/*`, `kai/hotfix-*`)
+- warning mode on PR CI and non-protected branches (parallel PR friendly)
+
+The check mode supports a maintainability regression gate that blocks increases in:
+- `process.exit` references
+- synchronous fs API references
+- TypeScript files over 350 LOC
+
 ---
 
 ## Related Documentation
@@ -194,4 +231,5 @@ All criteria achieved:
 - [Codebase Summary](./codebase-summary.md) - Current structure
 - [Code Standards](./code-standards.md) - Patterns and conventions
 - [System Architecture](./system-architecture.md) - Architecture diagrams
+- [Hardening Debt Burndown Tracker](./hardening-debt-burndown.md) - Legacy shim + sync-fs debt tracking
 - [CLAUDE.md](../CLAUDE.md) - AI development guidance

@@ -6,6 +6,7 @@ import { ResultFormatter } from './result-formatter';
 import { DelegationValidator } from '../utils/delegation-validator';
 import { SettingsParser } from './settings-parser';
 import { fail, warn } from '../utils/ui';
+import { getCcsDir } from '../utils/config-manager';
 
 /**
  * Parse and validate a string flag value
@@ -319,7 +320,7 @@ export class DelegationHandler {
     if (!profile) {
       console.error(fail('No profile specified'));
       console.error('    Usage: ccs <profile> -p "task"');
-      console.error('    Examples: ccs glm -p "task", ccs kimi -p "task"');
+      console.error('    Examples: ccs glm -p "task", ccs km -p "task"');
       process.exit(1);
     }
 
@@ -330,7 +331,7 @@ export class DelegationHandler {
       console.error(`    ${validation.error}`);
       console.error('');
       console.error('    Run: ccs doctor');
-      console.error(`    Or configure: ~/.ccs/${profile}.settings.json`);
+      console.error(`    Or configure: ${getCcsDir()}/${profile}.settings.json`);
       process.exit(1);
     }
   }

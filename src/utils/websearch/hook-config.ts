@@ -8,36 +8,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { info, warn } from '../ui';
 import { getWebSearchConfig } from '../../config/unified-config-loader';
-import { getCcsDir } from '../config-manager';
+import { getCcsHooksDir } from '../config-manager';
+import { getClaudeSettingsPath } from '../claude-config-path';
 import { isCcsWebSearchHook, deduplicateCcsHooks } from './hook-utils';
 
 // Hook file name
 const WEBSEARCH_HOOK = 'websearch-transformer.cjs';
-
-/**
- * Get Claude settings path (respects CCS_HOME for test isolation)
- * In tests, returns path under CCS_HOME; in production, uses real ~/.claude/
- */
-function getClaudeSettingsPath(): string {
-  const ccsHome = process.env.CCS_HOME;
-  if (ccsHome) {
-    // Test mode: use CCS_HOME parent for .claude directory
-    // This prevents tests from modifying user's real settings
-    return path.join(path.dirname(ccsHome), '.claude', 'settings.json');
-  }
-  // Production: use real home directory
-  return path.join(os.homedir(), '.claude', 'settings.json');
-}
-
-/**
- * Get CCS hooks directory (respects CCS_HOME for test isolation)
- */
-export function getCcsHooksDir(): string {
-  return path.join(getCcsDir(), 'hooks');
-}
 
 // Buffer time added to max provider timeout for hook timeout (seconds)
 const HOOK_TIMEOUT_BUFFER = 30;
@@ -130,7 +108,9 @@ export function ensureHookConfig(): boolean {
         const command = hookArray?.[0]?.command;
         if (typeof command !== 'string') return false;
 
-        const normalized = command.replace(/\\/g, '/');
+        const normalized = command
+          .replace(/\\/g, '/') // Windows backslashes
+          .replace(/\/+/g, '/'); // Collapse multiple slashes
         return normalized.includes('.ccs/hooks/websearch-transformer');
       });
 
@@ -254,7 +234,9 @@ export function removeHookConfig(): boolean {
 
       const command = hookArray[0].command as string;
       // Normalize path separators for cross-platform matching (Windows uses backslashes)
-      const normalizedCommand = command.replace(/\\/g, '/');
+      const normalizedCommand = command
+        .replace(/\\/g, '/') // Windows backslashes
+        .replace(/\/+/g, '/'); // Collapse multiple slashes
       return !normalizedCommand.includes('.ccs/hooks/websearch-transformer'); // Remove if CCS hook
     });
 

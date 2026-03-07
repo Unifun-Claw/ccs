@@ -7,20 +7,23 @@
 import {
   startAuthFlow,
   getCopilotStatus,
+  getCopilotUsage,
   startDaemon,
   stopDaemon,
   getAvailableModels,
   isCopilotApiInstalled,
 } from '../copilot';
+import type { CopilotModel } from '../copilot';
 import { loadOrCreateUnifiedConfig, saveUnifiedConfig } from '../config/unified-config-loader';
 import { DEFAULT_COPILOT_CONFIG } from '../config/unified-config-types';
 import { ok, fail, info, color } from '../utils/ui';
+import { normalizeCopilotSubcommand } from '../copilot/constants';
 
 /**
  * Handle copilot subcommand.
  */
 export async function handleCopilotCommand(args: string[]): Promise<number> {
-  const subcommand = args[0];
+  const subcommand = normalizeCopilotSubcommand(args[0]);
 
   switch (subcommand) {
     case 'auth':
@@ -29,6 +32,8 @@ export async function handleCopilotCommand(args: string[]): Promise<number> {
       return handleStatus();
     case 'models':
       return handleModels();
+    case 'usage':
+      return handleUsage();
     case 'start':
       return handleStart();
     case 'stop':
@@ -45,7 +50,8 @@ export async function handleCopilotCommand(args: string[]): Promise<number> {
     default:
       console.error(fail(`Unknown subcommand: ${subcommand}`));
       console.error('');
-      return handleHelp();
+      handleHelp();
+      return 1;
   }
 }
 
@@ -61,6 +67,7 @@ function handleHelp(): number {
   console.log('  auth      Start GitHub OAuth authentication');
   console.log('  status    Show authentication and daemon status');
   console.log('  models    List available models');
+  console.log('  usage     Show Copilot quota usage');
   console.log('  start     Start copilot-api daemon');
   console.log('  stop      Stop copilot-api daemon');
   console.log('  enable    Enable copilot integration');
@@ -71,6 +78,12 @@ function handleHelp(): number {
   console.log('  1. ccs copilot auth     # Authenticate with GitHub');
   console.log('  2. ccs copilot enable   # Enable integration');
   console.log('  3. ccs copilot start    # Start daemon');
+  console.log('  4. ccs copilot usage    # Check quota usage');
+  console.log('');
+  console.log('Flag aliases:');
+  console.log(
+    '  ccs copilot --auth | --status | --models | --usage | --start | --stop | --enable | --disable'
+  );
   console.log('');
   console.log('Or use the web UI: ccs config → Copilot tab');
   console.log('');
@@ -96,7 +109,8 @@ async function handleAuth(): Promise<number> {
     console.log('');
     console.log('Next steps:');
     console.log('  1. Enable copilot: ccs copilot enable');
-    console.log('  2. Start daemon:   npx copilot-api start');
+    console.log('  2. Start daemon:   ccs copilot start');
+    console.log('     (fallback:      npx copilot-api start)');
     console.log('  3. Use copilot:    ccs copilot');
     return 0;
   } else {
@@ -182,10 +196,113 @@ async function handleModels(): Promise<number> {
     const defaultMark = model.isDefault ? ' (default)' : '';
     console.log(`  ${model.id}${current}${defaultMark}`);
     console.log(`    Provider: ${model.provider}`);
+    const limits = formatModelLimits(model);
+    if (limits) {
+      console.log(`    Limits:   ${limits}`);
+    }
   }
 
   console.log('');
+  if (models.some((model) => formatModelLimits(model))) {
+    console.log('Live limits above come from GitHub Copilot model metadata.');
+  } else {
+    console.log('Live Copilot limits were unavailable. Start the daemon and rerun this command.');
+  }
+  console.log(
+    'CCS can switch Copilot models, but it cannot raise GitHub Copilot prompt/context caps.'
+  );
+  console.log('');
   console.log('To change model: ccs config (Copilot section)');
+
+  return 0;
+}
+
+function formatCompactTokens(value: number): string {
+  if (value >= 1_000_000) {
+    const millions = value / 1_000_000;
+    return millions % 1 === 0 ? `${millions}M` : `${millions.toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    const thousands = value / 1_000;
+    return thousands % 1 === 0 ? `${thousands}K` : `${thousands.toFixed(1)}K`;
+  }
+  return `${value}`;
+}
+
+function formatModelLimits(model: CopilotModel): string | null {
+  if (!model.limits) return null;
+
+  const parts: string[] = [];
+  if (model.limits.maxPromptTokens) {
+    parts.push(`prompt ${formatCompactTokens(model.limits.maxPromptTokens)}`);
+  }
+  if (model.limits.maxContextWindowTokens) {
+    parts.push(`context ${formatCompactTokens(model.limits.maxContextWindowTokens)}`);
+  }
+  if (model.limits.maxOutputTokens) {
+    parts.push(`output ${formatCompactTokens(model.limits.maxOutputTokens)}`);
+  }
+
+  return parts.length > 0 ? parts.join(' | ') : null;
+}
+
+function formatQuotaLine(
+  label: string,
+  snapshot: {
+    entitlement: number;
+    used: number;
+    percentUsed: number;
+    percentRemaining: number;
+    unlimited: boolean;
+  }
+): string {
+  const quotaText = snapshot.unlimited
+    ? 'Unlimited'
+    : `${snapshot.used}/${snapshot.entitlement} used`;
+  return `${label.padEnd(20)} ${quotaText} (${snapshot.percentUsed.toFixed(1)}% used, ${snapshot.percentRemaining.toFixed(1)}% remaining)`;
+}
+
+function formatResetDate(resetDate: string | null): string {
+  if (!resetDate) return 'unknown';
+  const date = new Date(resetDate);
+  if (Number.isNaN(date.getTime())) return resetDate;
+  return date.toLocaleString();
+}
+
+/**
+ * Handle usage subcommand.
+ */
+async function handleUsage(): Promise<number> {
+  const config = loadOrCreateUnifiedConfig();
+  const copilotConfig = config.copilot ?? DEFAULT_COPILOT_CONFIG;
+  const status = await getCopilotStatus(copilotConfig);
+
+  if (!status.daemon.running) {
+    console.error(fail('copilot-api daemon is not running.'));
+    console.error('');
+    console.error('Start daemon first: ccs copilot start');
+    return 1;
+  }
+
+  const usage = await getCopilotUsage(copilotConfig.port);
+  if (!usage) {
+    console.error(fail('Failed to fetch Copilot usage.'));
+    console.error('');
+    console.error('Try restarting daemon: ccs copilot stop && ccs copilot start');
+    return 1;
+  }
+
+  console.log('GitHub Copilot Usage');
+  console.log('────────────────────');
+  console.log('');
+  console.log(`Plan:        ${usage.plan || 'unknown'}`);
+  console.log(`Quota Reset: ${formatResetDate(usage.quotaResetDate)}`);
+  console.log('');
+  console.log('Quotas:');
+  console.log(`  ${formatQuotaLine('Premium Interactions', usage.quotas.premiumInteractions)}`);
+  console.log(`  ${formatQuotaLine('Chat', usage.quotas.chat)}`);
+  console.log(`  ${formatQuotaLine('Completions', usage.quotas.completions)}`);
+  console.log('');
 
   return 0;
 }

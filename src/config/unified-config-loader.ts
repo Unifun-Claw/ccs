@@ -15,19 +15,29 @@ import {
   createEmptyUnifiedConfig,
   UNIFIED_CONFIG_VERSION,
   DEFAULT_COPILOT_CONFIG,
+  DEFAULT_CURSOR_CONFIG,
   DEFAULT_GLOBAL_ENV,
   DEFAULT_CLIPROXY_SERVER_CONFIG,
+  DEFAULT_CLIPROXY_SAFETY_CONFIG,
   DEFAULT_QUOTA_MANAGEMENT_CONFIG,
   DEFAULT_THINKING_CONFIG,
   DEFAULT_DASHBOARD_AUTH_CONFIG,
+  DEFAULT_IMAGE_ANALYSIS_CONFIG,
+  CLIProxySafetyConfig,
   GlobalEnvConfig,
   ThinkingConfig,
   DashboardAuthConfig,
+  ImageAnalysisConfig,
+  CursorConfig,
+  ContinuityConfig,
 } from './unified-config-types';
+import { validateCompositeTiers } from '../cliproxy/composite-validator';
 import { isUnifiedConfigEnabled } from './feature-flags';
 
 const CONFIG_YAML = 'config.yaml';
 const CONFIG_JSON = 'config.json';
+const CONFIG_LOCK = 'config.yaml.lock';
+const LOCK_STALE_MS = 5000; // Lock is stale after 5 seconds
 
 /**
  * Get path to unified config.yaml
@@ -41,6 +51,74 @@ export function getConfigYamlPath(): string {
  */
 export function getConfigJsonPath(): string {
   return path.join(getCcsDir(), CONFIG_JSON);
+}
+
+/**
+ * Get path to config lockfile
+ */
+function getLockFilePath(): string {
+  return path.join(getCcsDir(), CONFIG_LOCK);
+}
+
+/**
+ * Acquire lockfile for config write operations.
+ * Returns true if lock acquired, false if already locked by another process.
+ * Cleans up stale locks (older than LOCK_STALE_MS).
+ */
+
+function acquireLock(): boolean {
+  const lockPath = getLockFilePath();
+  const lockData = `${process.pid}\n${Date.now()}`;
+
+  try {
+    // Check if lock exists
+    if (fs.existsSync(lockPath)) {
+      const content = fs.readFileSync(lockPath, 'utf8');
+      const [pidStr, timestampStr] = content.trim().split('\n');
+      const timestamp = parseInt(timestampStr, 10);
+
+      // Check if lock is stale
+      if (Date.now() - timestamp > LOCK_STALE_MS) {
+        // Stale lock - remove and acquire
+        fs.unlinkSync(lockPath);
+      } else {
+        // Check if process still exists
+        try {
+          process.kill(parseInt(pidStr, 10), 0); // Signal 0 checks if process exists
+          // Process exists - lock is valid
+          return false;
+        } catch {
+          // Process doesn't exist - remove stale lock
+          fs.unlinkSync(lockPath);
+        }
+      }
+    }
+
+    // Acquire lock
+    fs.writeFileSync(lockPath, lockData, { flag: 'wx', mode: 0o600 });
+    return true;
+  } catch (error) {
+    // EEXIST means another process acquired the lock between our check and write
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      return false;
+    }
+    return false;
+  }
+}
+
+/**
+ * Release lockfile after config write operation.
+ */
+
+function releaseLock(): void {
+  const lockPath = getLockFilePath();
+  try {
+    if (fs.existsSync(lockPath)) {
+      fs.unlinkSync(lockPath);
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
 }
 
 /**
@@ -103,8 +181,9 @@ export function loadUnifiedConfig(): UnifiedConfig | null {
           console.error(`[i] Config upgraded to v${UNIFIED_CONFIG_VERSION}`);
         }
         return upgraded;
-      } catch {
-        // Ignore save errors during upgrade - config still works
+      } catch (saveError) {
+        console.error('[!] Config upgrade failed to save:', (saveError as Error).message);
+        // Continue using the upgraded version in-memory even if save fails
       }
     }
 
@@ -132,11 +211,80 @@ export function loadUnifiedConfig(): UnifiedConfig | null {
 }
 
 /**
+ * Validate composite variant provider strings.
+ * Warns about invalid providers in composite variant configurations.
+ */
+function validateCompositeVariants(config: UnifiedConfig): void {
+  const variants = config.cliproxy?.variants;
+  if (!variants) return;
+
+  for (const [name, variant] of Object.entries(variants)) {
+    if ('type' in variant && variant.type === 'composite') {
+      const error = validateCompositeTiers(variant.tiers, {
+        defaultTier: variant.default_tier,
+        requireAllTiers: true,
+      });
+      if (error) {
+        console.warn(`[!] Variant '${name}': invalid composite config (${error})`);
+      }
+    }
+  }
+}
+
+/**
+ * Normalize continuity inheritance mapping payload.
+ * Keeps only non-empty string keys and values.
+ */
+function normalizeContinuityInheritanceMap(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const normalized: Record<string, string> = {};
+  for (const [profileName, accountName] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedProfile = profileName.trim();
+    const normalizedAccount = typeof accountName === 'string' ? accountName.trim() : '';
+
+    if (!normalizedProfile || !normalizedAccount) {
+      continue;
+    }
+
+    normalized[normalizedProfile] = normalizedAccount;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+/**
+ * Normalize continuity section.
+ * Supports legacy root key: continuity_inherit_from_account.
+ */
+function normalizeContinuityConfig(partial: Partial<UnifiedConfig>): ContinuityConfig | undefined {
+  const legacyMap = normalizeContinuityInheritanceMap(
+    (partial as Partial<UnifiedConfig> & { continuity_inherit_from_account?: unknown })
+      .continuity_inherit_from_account
+  );
+  const continuityMap = normalizeContinuityInheritanceMap(partial.continuity?.inherit_from_account);
+
+  if (!legacyMap && !continuityMap) {
+    return undefined;
+  }
+
+  return {
+    inherit_from_account: {
+      ...(legacyMap ?? {}),
+      ...(continuityMap ?? {}),
+    },
+  };
+}
+
+/**
  * Merge partial config with defaults.
  * Preserves existing data while filling in missing sections.
  */
 function mergeWithDefaults(partial: Partial<UnifiedConfig>): UnifiedConfig {
   const defaults = createEmptyUnifiedConfig();
+  const continuity = normalizeContinuityConfig(partial);
   return {
     version: partial.version ?? defaults.version,
     setup_completed: partial.setup_completed,
@@ -144,6 +292,7 @@ function mergeWithDefaults(partial: Partial<UnifiedConfig>): UnifiedConfig {
     accounts: partial.accounts ?? defaults.accounts,
     profiles: partial.profiles ?? defaults.profiles,
     cliproxy: {
+      ...partial.cliproxy,
       oauth_accounts: partial.cliproxy?.oauth_accounts ?? defaults.cliproxy.oauth_accounts,
       providers: defaults.cliproxy.providers, // Always use defaults for providers
       variants: partial.cliproxy?.variants ?? defaults.cliproxy.variants,
@@ -152,8 +301,17 @@ function mergeWithDefaults(partial: Partial<UnifiedConfig>): UnifiedConfig {
         request_log:
           partial.cliproxy?.logging?.request_log ?? defaults.cliproxy.logging?.request_log ?? false,
       },
+      safety: {
+        antigravity_ack_bypass:
+          partial.cliproxy?.safety?.antigravity_ack_bypass ??
+          DEFAULT_CLIPROXY_SAFETY_CONFIG.antigravity_ack_bypass,
+      },
+      // Kiro browser behavior setting (optional)
+      kiro_no_incognito: partial.cliproxy?.kiro_no_incognito,
       // Auth config - preserve user values, no defaults (uses constants as fallback)
       auth: partial.cliproxy?.auth,
+      // Background token refresh config (optional)
+      token_refresh: partial.cliproxy?.token_refresh,
       // Backend selection - validate and preserve user choice (original vs plus)
       backend:
         partial.cliproxy?.backend === 'original' || partial.cliproxy?.backend === 'plus'
@@ -203,11 +361,23 @@ function mergeWithDefaults(partial: Partial<UnifiedConfig>): UnifiedConfig {
       wait_on_limit: partial.copilot?.wait_on_limit ?? DEFAULT_COPILOT_CONFIG.wait_on_limit,
       model: partial.copilot?.model ?? DEFAULT_COPILOT_CONFIG.model,
     },
+    // Cursor config - disabled by default, merge with defaults
+    cursor: {
+      enabled: partial.cursor?.enabled ?? DEFAULT_CURSOR_CONFIG.enabled,
+      port: partial.cursor?.port ?? DEFAULT_CURSOR_CONFIG.port,
+      auto_start: partial.cursor?.auto_start ?? DEFAULT_CURSOR_CONFIG.auto_start,
+      ghost_mode: partial.cursor?.ghost_mode ?? DEFAULT_CURSOR_CONFIG.ghost_mode,
+      model: partial.cursor?.model ?? DEFAULT_CURSOR_CONFIG.model,
+      opus_model: partial.cursor?.opus_model,
+      sonnet_model: partial.cursor?.sonnet_model,
+      haiku_model: partial.cursor?.haiku_model,
+    },
     // Global env - injected into all non-Claude subscription profiles
     global_env: {
       enabled: partial.global_env?.enabled ?? true,
       env: partial.global_env?.env ?? { ...DEFAULT_GLOBAL_ENV },
     },
+    continuity,
     // CLIProxy server config - remote/local CLIProxyAPI settings
     cliproxy_server: {
       remote: {
@@ -268,6 +438,26 @@ function mergeWithDefaults(partial: Partial<UnifiedConfig>): UnifiedConfig {
           partial.quota_management?.manual?.tier_lock ??
           DEFAULT_QUOTA_MANAGEMENT_CONFIG.manual.tier_lock,
       },
+      runtime_monitor: {
+        enabled:
+          partial.quota_management?.runtime_monitor?.enabled ??
+          DEFAULT_QUOTA_MANAGEMENT_CONFIG.runtime_monitor.enabled,
+        normal_interval_seconds:
+          partial.quota_management?.runtime_monitor?.normal_interval_seconds ??
+          DEFAULT_QUOTA_MANAGEMENT_CONFIG.runtime_monitor.normal_interval_seconds,
+        critical_interval_seconds:
+          partial.quota_management?.runtime_monitor?.critical_interval_seconds ??
+          DEFAULT_QUOTA_MANAGEMENT_CONFIG.runtime_monitor.critical_interval_seconds,
+        warn_threshold:
+          partial.quota_management?.runtime_monitor?.warn_threshold ??
+          DEFAULT_QUOTA_MANAGEMENT_CONFIG.runtime_monitor.warn_threshold,
+        exhaustion_threshold:
+          partial.quota_management?.runtime_monitor?.exhaustion_threshold ??
+          DEFAULT_QUOTA_MANAGEMENT_CONFIG.runtime_monitor.exhaustion_threshold,
+        cooldown_minutes:
+          partial.quota_management?.runtime_monitor?.cooldown_minutes ??
+          DEFAULT_QUOTA_MANAGEMENT_CONFIG.runtime_monitor.cooldown_minutes,
+      },
     },
     // Thinking config - auto/manual/off control for reasoning budget
     thinking: {
@@ -293,6 +483,13 @@ function mergeWithDefaults(partial: Partial<UnifiedConfig>): UnifiedConfig {
         partial.dashboard_auth?.session_timeout_hours ??
         DEFAULT_DASHBOARD_AUTH_CONFIG.session_timeout_hours,
     },
+    // Image analysis config - enabled by default for CLIProxy providers
+    image_analysis: {
+      enabled: partial.image_analysis?.enabled ?? DEFAULT_IMAGE_ANALYSIS_CONFIG.enabled,
+      timeout: partial.image_analysis?.timeout ?? DEFAULT_IMAGE_ANALYSIS_CONFIG.timeout,
+      provider_models:
+        partial.image_analysis?.provider_models ?? DEFAULT_IMAGE_ANALYSIS_CONFIG.provider_models,
+    },
   };
 }
 
@@ -304,7 +501,10 @@ export function loadOrCreateUnifiedConfig(): UnifiedConfig {
   const existing = loadUnifiedConfig();
   if (existing) {
     // Merge with defaults to fill any missing sections
-    return mergeWithDefaults(existing);
+    const merged = mergeWithDefaults(existing);
+    // Validate composite variant provider strings
+    validateCompositeVariants(merged);
+    return merged;
   }
 
   // Create empty config
@@ -459,6 +659,25 @@ function generateYamlWithComments(config: UnifiedConfig): string {
     lines.push('');
   }
 
+  // Cursor section (Cursor IDE proxy daemon)
+  if (config.cursor) {
+    lines.push('# ----------------------------------------------------------------------------');
+    lines.push('# Cursor: Cursor IDE proxy daemon');
+    lines.push('# Enables Cursor IDE integration via local proxy daemon.');
+    lines.push('#');
+    lines.push('# enabled: Enable/disable Cursor integration (default: false)');
+    lines.push('# port: Port for cursor proxy daemon (default: 20129)');
+    lines.push('# auto_start: Auto-start daemon when CCS starts (default: false)');
+    lines.push('# ghost_mode: Disable telemetry for privacy (default: true)');
+    lines.push('# model: Default model ID (used for ANTHROPIC_MODEL)');
+    lines.push('# opus_model/sonnet_model/haiku_model: Optional tier model mapping');
+    lines.push('# ----------------------------------------------------------------------------');
+    lines.push(
+      yaml.dump({ cursor: config.cursor }, { indent: 2, lineWidth: -1, quotingType: '"' }).trim()
+    );
+    lines.push('');
+  }
+
   // Global env section
   if (config.global_env) {
     lines.push('# ----------------------------------------------------------------------------');
@@ -481,13 +700,31 @@ function generateYamlWithComments(config: UnifiedConfig): string {
     lines.push('');
   }
 
+  // Continuity inheritance section
+  if (config.continuity?.inherit_from_account) {
+    lines.push('# ----------------------------------------------------------------------------');
+    lines.push('# Continuity Inheritance: Reuse account continuity artifacts across profiles');
+    lines.push('# Map execution profile names to source account profiles (CLAUDE_CONFIG_DIR).');
+    lines.push('# Applies to Claude target only; credentials remain profile-specific.');
+    lines.push('# Example: continuity.inherit_from_account.glm: pro');
+    lines.push('# ----------------------------------------------------------------------------');
+    lines.push(
+      yaml
+        .dump({ continuity: config.continuity }, { indent: 2, lineWidth: -1, quotingType: '"' })
+        .trim()
+    );
+    lines.push('');
+  }
+
   // Thinking section (extended thinking/reasoning configuration)
   if (config.thinking) {
     lines.push('# ----------------------------------------------------------------------------');
     lines.push('# Thinking: Extended thinking/reasoning budget configuration');
     lines.push('# Controls reasoning depth for supported providers (agy, gemini, codex).');
     lines.push('#');
-    lines.push('# Modes: auto (use tier_defaults), off (disable), manual (--thinking flag only)');
+    lines.push(
+      '# Modes: auto (use tier_defaults), off (disable), manual (--thinking/--effort flags)'
+    );
     lines.push('# Levels: minimal (512), low (1K), medium (8K), high (24K), xhigh (32K), auto');
     lines.push('# Override: Set global override value (number or level name)');
     lines.push('# Provider overrides: Per-provider tier defaults');
@@ -520,14 +757,102 @@ function generateYamlWithComments(config: UnifiedConfig): string {
     lines.push('');
   }
 
+  // Image analysis section
+  if (config.image_analysis) {
+    lines.push('# ----------------------------------------------------------------------------');
+    lines.push('# Image Analysis: Vision-based analysis for images and PDFs');
+    lines.push('# Routes Read tool requests for images/PDFs through CLIProxy vision API.');
+    lines.push('#');
+    lines.push('# When enabled: Image files trigger vision analysis instead of raw file read');
+    lines.push('# Provider models: Vision model used for each CLIProxy provider');
+    lines.push('# Timeout: Maximum seconds to wait for analysis (10-600)');
+    lines.push('#');
+    lines.push('# Supported formats: .jpg, .jpeg, .png, .gif, .webp, .heic, .bmp, .tiff, .pdf');
+    lines.push('# Configure via: ccs config image-analysis');
+    lines.push('# ----------------------------------------------------------------------------');
+    lines.push(
+      yaml
+        .dump(
+          { image_analysis: config.image_analysis },
+          { indent: 2, lineWidth: -1, quotingType: '"' }
+        )
+        .trim()
+    );
+    lines.push('');
+  }
+
   return lines.join('\n');
 }
 
 /**
- * Save unified config to YAML file.
- * Uses atomic write (temp file + rename) to prevent corruption.
+ * Sync sleep helper for lock retry loops.
+ * Uses Atomics.wait when available to avoid CPU-intensive busy-wait.
  */
-export function saveUnifiedConfig(config: UnifiedConfig): void {
+function sleepSync(ms: number): void {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      /* busy-wait */
+    }
+  }
+}
+
+/**
+ * Execute a callback while holding the config lock.
+ */
+function withConfigWriteLock<T>(callback: () => T): T {
+  // Acquire lock (retry for up to 1 second)
+  const maxRetries = 10;
+  const retryDelayMs = 100;
+  let lockAcquired = false;
+  for (let i = 0; i < maxRetries; i++) {
+    if (acquireLock()) {
+      lockAcquired = true;
+      break;
+    }
+    sleepSync(retryDelayMs);
+  }
+
+  if (!lockAcquired) {
+    throw new Error('Config file is locked by another process. Wait a moment and try again.');
+  }
+
+  try {
+    return callback();
+  } finally {
+    // Always release lock
+    releaseLock();
+  }
+}
+
+/**
+ * Load unified config directly from disk while lock is already held.
+ * Falls back to empty config when file doesn't exist.
+ */
+function loadUnifiedConfigWithLockHeld(): UnifiedConfig {
+  const yamlPath = getConfigYamlPath();
+  if (!fs.existsSync(yamlPath)) {
+    return createEmptyUnifiedConfig();
+  }
+
+  const content = fs.readFileSync(yamlPath, 'utf8');
+  const parsed = yaml.load(content);
+
+  if (!isUnifiedConfig(parsed)) {
+    throw new Error(`Invalid config format in ${yamlPath}`);
+  }
+
+  const merged = mergeWithDefaults(parsed);
+  validateCompositeVariants(merged);
+  return merged;
+}
+
+/**
+ * Write unified config to disk while lock is already held.
+ */
+function writeUnifiedConfigWithLockHeld(config: UnifiedConfig): void {
   const yamlPath = getConfigYamlPath();
   const dir = path.dirname(yamlPath);
 
@@ -549,7 +874,7 @@ export function saveUnifiedConfig(config: UnifiedConfig): void {
   try {
     fs.writeFileSync(tempPath, content, { mode: 0o600 });
     fs.renameSync(tempPath, yamlPath);
-  } catch (err) {
+  } catch (error) {
     // Clean up temp file on error
     if (fs.existsSync(tempPath)) {
       try {
@@ -558,8 +883,39 @@ export function saveUnifiedConfig(config: UnifiedConfig): void {
         // Ignore cleanup errors
       }
     }
-    throw err;
+    // Classify filesystem errors
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'ENOSPC') {
+      throw new Error('Disk full - cannot save config. Free up space and try again.');
+    } else if (err.code === 'EROFS' || err.code === 'EACCES') {
+      throw new Error(`Cannot write config - check file permissions: ${err.message}`);
+    }
+    throw error;
   }
+}
+
+/**
+ * Save unified config to YAML file.
+ * Uses atomic write (temp file + rename) to prevent corruption.
+ * Uses lockfile to prevent concurrent writes.
+ */
+export function saveUnifiedConfig(config: UnifiedConfig): void {
+  withConfigWriteLock(() => {
+    writeUnifiedConfigWithLockHeld(config);
+  });
+}
+
+/**
+ * Atomically mutate unified config with lock held across read-modify-write.
+ * Prevents stale writes from overwriting concurrent updates.
+ */
+export function mutateUnifiedConfig(mutator: (config: UnifiedConfig) => void): UnifiedConfig {
+  return withConfigWriteLock(() => {
+    const current = loadUnifiedConfigWithLockHeld();
+    mutator(current);
+    writeUnifiedConfigWithLockHeld(current);
+    return current;
+  });
 }
 
 /**
@@ -567,10 +923,9 @@ export function saveUnifiedConfig(config: UnifiedConfig): void {
  * Loads existing config, merges changes, and saves.
  */
 export function updateUnifiedConfig(updates: Partial<UnifiedConfig>): UnifiedConfig {
-  const config = loadOrCreateUnifiedConfig();
-  const updated = { ...config, ...updates };
-  saveUnifiedConfig(updated);
-  return updated;
+  return mutateUnifiedConfig((config) => {
+    Object.assign(config, updates);
+  });
 }
 
 /**
@@ -670,6 +1025,28 @@ export function getGlobalEnvConfig(): GlobalEnvConfig {
 }
 
 /**
+ * Get continuity inheritance mapping.
+ * Returns empty mapping when not configured.
+ */
+export function getContinuityInheritanceMap(): Record<string, string> {
+  const config = loadOrCreateUnifiedConfig();
+  return config.continuity?.inherit_from_account ?? {};
+}
+
+/**
+ * Get cliproxy safety configuration.
+ * Returns defaults if not configured.
+ */
+export function getCliproxySafetyConfig(): CLIProxySafetyConfig {
+  const config = loadOrCreateUnifiedConfig();
+  return {
+    antigravity_ack_bypass:
+      config.cliproxy?.safety?.antigravity_ack_bypass ??
+      DEFAULT_CLIPROXY_SAFETY_CONFIG.antigravity_ack_bypass,
+  };
+}
+
+/**
  * Get thinking configuration.
  * Returns defaults if not configured.
  */
@@ -720,4 +1097,28 @@ export function getDashboardAuthConfig(): DashboardAuthConfig {
     password_hash: envPasswordHash ?? config.dashboard_auth?.password_hash ?? '',
     session_timeout_hours: config.dashboard_auth?.session_timeout_hours ?? 24,
   };
+}
+
+/**
+ * Get image_analysis configuration.
+ * Returns defaults if not configured.
+ */
+export function getImageAnalysisConfig(): ImageAnalysisConfig {
+  const config = loadOrCreateUnifiedConfig();
+
+  return {
+    enabled: config.image_analysis?.enabled ?? DEFAULT_IMAGE_ANALYSIS_CONFIG.enabled,
+    timeout: config.image_analysis?.timeout ?? DEFAULT_IMAGE_ANALYSIS_CONFIG.timeout,
+    provider_models:
+      config.image_analysis?.provider_models ?? DEFAULT_IMAGE_ANALYSIS_CONFIG.provider_models,
+  };
+}
+
+/**
+ * Get cursor configuration.
+ * Returns defaults if not configured.
+ */
+export function getCursorConfig(): CursorConfig {
+  const config = loadOrCreateUnifiedConfig();
+  return config.cursor ?? { ...DEFAULT_CURSOR_CONFIG };
 }

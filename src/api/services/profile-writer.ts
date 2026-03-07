@@ -12,11 +12,52 @@ import {
   isUnifiedMode,
 } from '../../config/unified-config-loader';
 import { ensureProfileHooks } from '../../utils/websearch/profile-hook-injector';
-import type { ModelMapping, CreateApiProfileResult, RemoveApiProfileResult } from './profile-types';
+import type { TargetType } from '../../targets/target-adapter';
+import { resolveDroidProvider } from '../../targets/droid-provider';
+import { mapExternalProviderName } from '../../cliproxy/provider-capabilities';
+import {
+  extractProviderFromPathname,
+  getDeniedModelIdReasonForProvider,
+} from '../../cliproxy/model-id-normalizer';
+import type { CLIProxyProvider } from '../../cliproxy/types';
+import type {
+  ModelMapping,
+  CreateApiProfileResult,
+  RemoveApiProfileResult,
+  UpdateApiProfileTargetResult,
+} from './profile-types';
 
 /** Check if URL is an OpenRouter endpoint */
 function isOpenRouterUrl(baseUrl: string): boolean {
   return baseUrl.toLowerCase().includes('openrouter.ai');
+}
+
+function resolveProviderFromBaseUrl(baseUrl: string): CLIProxyProvider | null {
+  if (baseUrl.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(baseUrl);
+    const extracted = extractProviderFromPathname(parsed.pathname);
+    return extracted ? mapExternalProviderName(extracted) : null;
+  } catch {
+    const extracted = extractProviderFromPathname(baseUrl);
+    return extracted ? mapExternalProviderName(extracted) : null;
+  }
+}
+
+function getDeniedModelReason(baseUrl: string, models: ModelMapping): string | null {
+  const provider = resolveProviderFromBaseUrl(baseUrl);
+  if (!provider) return null;
+
+  for (const modelId of [models.default, models.opus, models.sonnet, models.haiku]) {
+    if (modelId.trim().length === 0) continue;
+    const deniedReason = getDeniedModelIdReasonForProvider(modelId, provider);
+    if (deniedReason) return deniedReason;
+  }
+
+  return null;
 }
 
 /** Create settings.json file for API profile (legacy format) */
@@ -24,10 +65,16 @@ function createSettingsFile(
   name: string,
   baseUrl: string,
   apiKey: string,
-  models: ModelMapping
+  models: ModelMapping,
+  provider?: string
 ): string {
   const ccsDir = getCcsDir();
   const settingsPath = path.join(ccsDir, `${name}.settings.json`);
+  const droidProvider = resolveDroidProvider({
+    provider,
+    baseUrl,
+    model: models.default,
+  });
 
   const settings = {
     env: {
@@ -37,6 +84,7 @@ function createSettingsFile(
       ANTHROPIC_DEFAULT_OPUS_MODEL: models.opus,
       ANTHROPIC_DEFAULT_SONNET_MODEL: models.sonnet,
       ANTHROPIC_DEFAULT_HAIKU_MODEL: models.haiku,
+      CCS_DROID_PROVIDER: droidProvider,
       // OpenRouter requires explicitly blanking the API key to prevent conflicts
       ...(isOpenRouterUrl(baseUrl) && { ANTHROPIC_API_KEY: '' }),
     },
@@ -51,11 +99,15 @@ function createSettingsFile(
 }
 
 /** Update config.json with new API profile (legacy format) */
-function updateLegacyConfig(name: string): void {
+function updateLegacyConfig(name: string, target: TargetType = 'claude'): void {
   const configPath = getConfigPath();
   const ccsDir = getCcsDir();
 
-  let config: { profiles: Record<string, string>; cliproxy?: Record<string, unknown> };
+  let config: {
+    profiles: Record<string, string>;
+    cliproxy?: Record<string, unknown>;
+    profile_targets?: Record<string, TargetType>;
+  };
   try {
     config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   } catch {
@@ -64,6 +116,12 @@ function updateLegacyConfig(name: string): void {
 
   const relativePath = `~/.ccs/${name}.settings.json`;
   config.profiles[name] = relativePath;
+  config.profile_targets = config.profile_targets || {};
+  if (target === 'claude') {
+    delete config.profile_targets[name];
+  } else {
+    config.profile_targets[name] = target;
+  }
 
   if (!fs.existsSync(ccsDir)) {
     fs.mkdirSync(ccsDir, { recursive: true });
@@ -80,11 +138,18 @@ function createApiProfileUnified(
   name: string,
   baseUrl: string,
   apiKey: string,
-  models: ModelMapping
+  models: ModelMapping,
+  target: TargetType = 'claude',
+  provider?: string
 ): void {
   const ccsDir = getCcsDir();
   const settingsFile = `${name}.settings.json`;
   const settingsPath = path.join(ccsDir, settingsFile);
+  const droidProvider = resolveDroidProvider({
+    provider,
+    baseUrl,
+    model: models.default,
+  });
 
   const settings = {
     env: {
@@ -94,6 +159,7 @@ function createApiProfileUnified(
       ANTHROPIC_DEFAULT_OPUS_MODEL: models.opus,
       ANTHROPIC_DEFAULT_SONNET_MODEL: models.sonnet,
       ANTHROPIC_DEFAULT_HAIKU_MODEL: models.haiku,
+      CCS_DROID_PROVIDER: droidProvider,
       // OpenRouter requires explicitly blanking the API key to prevent conflicts
       ...(isOpenRouterUrl(baseUrl) && { ANTHROPIC_API_KEY: '' }),
     },
@@ -112,6 +178,7 @@ function createApiProfileUnified(
   config.profiles[name] = {
     type: 'api',
     settings: `~/.ccs/${settingsFile}`,
+    ...(target !== 'claude' && { target }),
   };
   saveUnifiedConfig(config);
 }
@@ -121,16 +188,23 @@ export function createApiProfile(
   name: string,
   baseUrl: string,
   apiKey: string,
-  models: ModelMapping
+  models: ModelMapping,
+  target: TargetType = 'claude',
+  provider?: string
 ): CreateApiProfileResult {
   try {
+    const deniedReason = getDeniedModelReason(baseUrl, models);
+    if (deniedReason) {
+      return { success: false, settingsFile: '', error: deniedReason };
+    }
+
     const settingsFile = `~/.ccs/${name}.settings.json`;
 
     if (isUnifiedMode()) {
-      createApiProfileUnified(name, baseUrl, apiKey, models);
+      createApiProfileUnified(name, baseUrl, apiKey, models, target, provider);
     } else {
-      createSettingsFile(name, baseUrl, apiKey, models);
-      updateLegacyConfig(name);
+      createSettingsFile(name, baseUrl, apiKey, models, provider);
+      updateLegacyConfig(name, target);
     }
 
     return { success: true, settingsFile };
@@ -140,6 +214,63 @@ export function createApiProfile(
       settingsFile: '',
       error: (error as Error).message,
     };
+  }
+}
+
+/**
+ * Update API profile target (claude/droid).
+ * Persists to config.yaml in unified mode and config.json profile_targets in legacy mode.
+ */
+export function updateApiProfileTarget(
+  name: string,
+  target: TargetType
+): UpdateApiProfileTargetResult {
+  try {
+    if (isUnifiedMode()) {
+      const config = loadOrCreateUnifiedConfig();
+      if (!config.profiles[name]) {
+        return { success: false, error: `API profile not found: ${name}` };
+      }
+
+      if (target === 'claude') {
+        delete config.profiles[name].target;
+      } else {
+        config.profiles[name].target = target;
+      }
+      saveUnifiedConfig(config);
+      return { success: true, target };
+    }
+
+    const configPath = getConfigPath();
+    let config: {
+      profiles: Record<string, string>;
+      cliproxy?: Record<string, unknown>;
+      profile_targets?: Record<string, TargetType>;
+    };
+    try {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } catch {
+      config = { profiles: {} };
+    }
+
+    if (!config.profiles[name]) {
+      return { success: false, error: `API profile not found: ${name}` };
+    }
+
+    config.profile_targets = config.profile_targets || {};
+    if (target === 'claude') {
+      delete config.profile_targets[name];
+    } else {
+      config.profile_targets[name] = target;
+    }
+
+    const tempPath = configPath + '.tmp';
+    fs.writeFileSync(tempPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+    fs.renameSync(tempPath, configPath);
+
+    return { success: true, target };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
   }
 }
 
@@ -175,6 +306,12 @@ function removeApiProfileUnified(name: string): void {
 function removeApiProfileLegacy(name: string): void {
   const config = loadConfigSafe();
   delete config.profiles[name];
+  if (config.profile_targets) {
+    delete config.profile_targets[name];
+    if (Object.keys(config.profile_targets).length === 0) {
+      delete config.profile_targets;
+    }
+  }
 
   const configPath = getConfigPath();
   const tempPath = configPath + '.tmp';

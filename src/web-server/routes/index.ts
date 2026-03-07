@@ -20,10 +20,13 @@ import cliproxyAuthRoutes from './cliproxy-auth-routes';
 import cliproxyStatsRoutes from './cliproxy-stats-routes';
 import cliproxySyncRoutes from './cliproxy-sync-routes';
 import copilotRoutes from './copilot-routes';
+import cursorRoutes from './cursor-routes';
+import droidRoutes from './droid-routes';
 import miscRoutes from './misc-routes';
 import cliproxyServerRoutes from './proxy-routes';
 import authRoutes from './auth-routes';
 import persistRoutes from './persist-routes';
+import catalogRoutes from './catalog-routes';
 
 // Create the main API router
 export const apiRoutes = Router();
@@ -53,6 +56,7 @@ apiRoutes.use('/cliproxy', variantRoutes);
 apiRoutes.use('/cliproxy/auth', cliproxyAuthRoutes);
 apiRoutes.use('/cliproxy', cliproxyStatsRoutes);
 apiRoutes.use('/cliproxy/sync', cliproxySyncRoutes);
+apiRoutes.use('/cliproxy/catalog', catalogRoutes);
 apiRoutes.use('/cliproxy/openai-compat', providerRoutes);
 
 // ==================== WebSearch ====================
@@ -60,6 +64,12 @@ apiRoutes.use('/websearch', websearchRoutes);
 
 // ==================== Copilot ====================
 apiRoutes.use('/copilot', copilotRoutes);
+
+// ==================== Cursor ====================
+apiRoutes.use('/cursor', cursorRoutes);
+
+// ==================== Droid ====================
+apiRoutes.use('/droid', droidRoutes);
 
 // ==================== CLIProxy Server Settings ====================
 apiRoutes.use('/cliproxy-server', cliproxyServerRoutes);

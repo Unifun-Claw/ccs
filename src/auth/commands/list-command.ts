@@ -6,6 +6,7 @@
 
 import { ProfileMetadata } from '../../types';
 import { initUI, header, color, dim, warn, table } from '../../utils/ui';
+import { resolveAccountContextPolicy, formatAccountContextPolicy } from '../account-context';
 import { exitWithError } from '../../errors';
 import { ExitCode } from '../../errors/exit-codes';
 import { CommandContext, ListOutput, parseArgs, formatRelativeTime } from './types';
@@ -29,6 +30,9 @@ export async function handleList(ctx: CommandContext, args: string[]): Promise<v
         type: 'account',
         created: account.created,
         last_used: account.last_used,
+        context_mode: account.context_mode,
+        context_group: account.context_group,
+        continuity_mode: account.continuity_mode,
       };
     }
 
@@ -41,6 +45,7 @@ export async function handleList(ctx: CommandContext, args: string[]): Promise<v
         version: ctx.version,
         profiles: profileNames.map((name) => {
           const profile = profiles[name];
+          const contextPolicy = resolveAccountContextPolicy(profile);
           const isDefault = name === defaultProfile;
           const instancePath = ctx.instanceMgr.getInstancePath(name);
 
@@ -50,6 +55,9 @@ export async function handleList(ctx: CommandContext, args: string[]): Promise<v
             is_default: isDefault,
             created: profile.created,
             last_used: profile.last_used || null,
+            context_mode: contextPolicy.mode,
+            context_group: contextPolicy.group || null,
+            continuity_mode: contextPolicy.mode === 'shared' ? contextPolicy.continuityMode : null,
             instance_path: instancePath,
           };
         }),
@@ -98,6 +106,7 @@ export async function handleList(ctx: CommandContext, args: string[]): Promise<v
     const rows: string[][] = sorted.map((name) => {
       const profile = profiles[name];
       const isDefault = name === defaultProfile;
+      const contextPolicy = resolveAccountContextPolicy(profile);
 
       // Status column
       const status = isDefault ? color('[OK] default', 'success') : color('[OK]', 'success');
@@ -112,6 +121,7 @@ export async function handleList(ctx: CommandContext, args: string[]): Promise<v
 
       if (verbose) {
         row.push(lastUsed);
+        row.push(formatAccountContextPolicy(contextPolicy));
       }
 
       return row;
@@ -119,14 +129,14 @@ export async function handleList(ctx: CommandContext, args: string[]): Promise<v
 
     // Headers
     const headers = verbose
-      ? ['Profile', 'Type', 'Status', 'Last Used']
+      ? ['Profile', 'Type', 'Status', 'Last Used', 'Context']
       : ['Profile', 'Type', 'Status'];
 
     // Print table
     console.log(
       table(rows, {
         head: headers,
-        colWidths: verbose ? [15, 12, 15, 12] : [15, 12, 15],
+        colWidths: verbose ? [15, 12, 15, 12, 34] : [15, 12, 15],
       })
     );
     console.log('');

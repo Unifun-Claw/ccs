@@ -151,6 +151,19 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
     cacheCreationPerMillion: 3.75,
     cacheReadPerMillion: 0.3,
   },
+  // Claude 4.6 Sonnet ($3/$15)
+  'claude-sonnet-4-6': {
+    inputPerMillion: 3.0,
+    outputPerMillion: 15.0,
+    cacheCreationPerMillion: 3.75,
+    cacheReadPerMillion: 0.3,
+  },
+  'claude-sonnet-4-6-thinking': {
+    inputPerMillion: 3.0,
+    outputPerMillion: 15.0,
+    cacheCreationPerMillion: 3.75,
+    cacheReadPerMillion: 0.3,
+  },
   // Claude 4 Opus ($15/$75)
   'claude-4-opus-20250514': {
     inputPerMillion: 15.0,
@@ -197,6 +210,19 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
     cacheReadPerMillion: 0.5,
   },
   'claude-opus-4-5-thinking': {
+    inputPerMillion: 5.0,
+    outputPerMillion: 25.0,
+    cacheCreationPerMillion: 6.25,
+    cacheReadPerMillion: 0.5,
+  },
+  // Claude 4.6 Opus ($5/$25)
+  'claude-opus-4-6': {
+    inputPerMillion: 5.0,
+    outputPerMillion: 25.0,
+    cacheCreationPerMillion: 6.25,
+    cacheReadPerMillion: 0.5,
+  },
+  'claude-opus-4-6-thinking': {
     inputPerMillion: 5.0,
     outputPerMillion: 25.0,
     cacheCreationPerMillion: 6.25,
@@ -410,71 +436,90 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
   },
 
   // ---------------------------------------------------------------------------
-  // GLM Models (Zhipu AI / Z.AI) - Source: better-ccusage
+  // GLM Models (Zhipu AI / Z.AI) - Source: OpenRouter verified pricing
   // ---------------------------------------------------------------------------
-  'glm-4.7': {
-    inputPerMillion: 0.6,
-    outputPerMillion: 2.2,
+  'glm-5': {
+    inputPerMillion: 1.0,
+    outputPerMillion: 3.2,
     cacheCreationPerMillion: 0.0,
-    cacheReadPerMillion: 0.11,
+    cacheReadPerMillion: 0.2,
+  },
+  'glm-4.7': {
+    inputPerMillion: 0.4,
+    outputPerMillion: 1.5,
+    cacheCreationPerMillion: 0.0,
+    cacheReadPerMillion: 0.2,
   },
   'glm-4.6': {
-    inputPerMillion: 0.6,
-    outputPerMillion: 2.2,
+    inputPerMillion: 0.35,
+    outputPerMillion: 1.5,
     cacheCreationPerMillion: 0.0,
-    cacheReadPerMillion: 0.11,
+    cacheReadPerMillion: 0.175,
   },
   'glm-4.6-cc-max': {
-    inputPerMillion: 0.6,
-    outputPerMillion: 2.2,
+    inputPerMillion: 0.35,
+    outputPerMillion: 1.5,
     cacheCreationPerMillion: 0.0,
-    cacheReadPerMillion: 0.11,
+    cacheReadPerMillion: 0.175,
   },
   'glm-4.5': {
-    inputPerMillion: 0.6,
-    outputPerMillion: 2.2,
+    inputPerMillion: 0.35,
+    outputPerMillion: 1.55,
     cacheCreationPerMillion: 0.0,
-    cacheReadPerMillion: 0.11,
+    cacheReadPerMillion: 0.175,
   },
   'glm-4.5-air': {
-    inputPerMillion: 0.2,
-    outputPerMillion: 1.1,
+    inputPerMillion: 0.13,
+    outputPerMillion: 0.85,
     cacheCreationPerMillion: 0.0,
-    cacheReadPerMillion: 0.03,
+    cacheReadPerMillion: 0.025,
   },
 
   // ---------------------------------------------------------------------------
-  // Kimi Models (Moonshot AI) - Source: better-ccusage
+  // Kimi Models (Moonshot AI) - Source: Official Kimi Platform pricing
+  // inputPerMillion = cache miss price, cacheReadPerMillion = cache hit price
   // ---------------------------------------------------------------------------
-  'kimi-for-coding': {
-    inputPerMillion: 0.15,
-    outputPerMillion: 0.6,
+  'kimi-k2.5': {
+    inputPerMillion: 0.6,
+    outputPerMillion: 3.0,
     cacheCreationPerMillion: 0.0,
-    cacheReadPerMillion: 0.0,
+    cacheReadPerMillion: 0.1,
+  },
+  'kimi-for-coding': {
+    inputPerMillion: 0.6,
+    outputPerMillion: 2.5,
+    cacheCreationPerMillion: 0.0,
+    cacheReadPerMillion: 0.15,
   },
   'kimi-k2-0905-preview': {
-    inputPerMillion: 0.15,
-    outputPerMillion: 0.6,
+    inputPerMillion: 0.6,
+    outputPerMillion: 2.5,
     cacheCreationPerMillion: 0.0,
-    cacheReadPerMillion: 0.0,
+    cacheReadPerMillion: 0.15,
   },
   'kimi-k2-turbo-preview': {
-    inputPerMillion: 0.15,
-    outputPerMillion: 1.15,
+    inputPerMillion: 1.15,
+    outputPerMillion: 8.0,
     cacheCreationPerMillion: 0.0,
-    cacheReadPerMillion: 0.0,
+    cacheReadPerMillion: 0.15,
   },
   'kimi-k2-thinking': {
-    inputPerMillion: 0.15,
-    outputPerMillion: 0.6,
+    inputPerMillion: 0.6,
+    outputPerMillion: 2.5,
     cacheCreationPerMillion: 0.0,
-    cacheReadPerMillion: 0.0,
+    cacheReadPerMillion: 0.15,
   },
   'kimi-k2-thinking-turbo': {
-    inputPerMillion: 0.15,
-    outputPerMillion: 1.15,
+    inputPerMillion: 1.15,
+    outputPerMillion: 8.0,
     cacheCreationPerMillion: 0.0,
-    cacheReadPerMillion: 0.0,
+    cacheReadPerMillion: 0.15,
+  },
+  'kimi-k2': {
+    inputPerMillion: 0.6,
+    outputPerMillion: 2.5,
+    cacheCreationPerMillion: 0.0,
+    cacheReadPerMillion: 0.15,
   },
   'kimi-k2-instruct': {
     inputPerMillion: 1.0,
@@ -540,6 +585,18 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
   // ---------------------------------------------------------------------------
   // MiniMax Models - Source: https://platform.minimax.io/docs/pricing/pay-as-you-go
   // ---------------------------------------------------------------------------
+  'MiniMax-M2.5': {
+    inputPerMillion: 0.3,
+    outputPerMillion: 1.2,
+    cacheCreationPerMillion: 0.375,
+    cacheReadPerMillion: 0.03,
+  },
+  'MiniMax-M2.5-lightning': {
+    inputPerMillion: 0.6,
+    outputPerMillion: 2.4,
+    cacheCreationPerMillion: 0.375,
+    cacheReadPerMillion: 0.03,
+  },
   'MiniMax-M2.1': {
     inputPerMillion: 0.3,
     outputPerMillion: 1.2,
@@ -547,7 +604,7 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
     cacheReadPerMillion: 0.03,
   },
   'MiniMax-M2.1-lightning': {
-    inputPerMillion: 0.3,
+    inputPerMillion: 0.6,
     outputPerMillion: 2.4,
     cacheCreationPerMillion: 0.375,
     cacheReadPerMillion: 0.03,
@@ -557,6 +614,51 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
     outputPerMillion: 1.2,
     cacheCreationPerMillion: 0.375,
     cacheReadPerMillion: 0.03,
+  },
+  // ---------------------------------------------------------------------------
+  // Qwen Models - Source: https://www.alibabacloud.com/help/zh/model-studio/model-pricing
+  // ---------------------------------------------------------------------------
+  'qwen3-max': {
+    inputPerMillion: 1.2,
+    outputPerMillion: 6,
+    cacheCreationPerMillion: 1.2,
+    cacheReadPerMillion: 0.24,
+  },
+  'qwen3-max-2026-01-23': {
+    inputPerMillion: 1.2,
+    outputPerMillion: 6,
+    cacheCreationPerMillion: 1.2,
+    cacheReadPerMillion: 0.24,
+  },
+  'qwen3-max-preview': {
+    inputPerMillion: 1.2,
+    outputPerMillion: 6,
+    cacheCreationPerMillion: 1.2,
+    cacheReadPerMillion: 0.24,
+  },
+  'qwen3.5-plus': {
+    inputPerMillion: 0.4,
+    outputPerMillion: 2.4,
+    cacheCreationPerMillion: 0.4,
+    cacheReadPerMillion: 0.08,
+  },
+  'qwen3.5-flash': {
+    inputPerMillion: 0.1,
+    outputPerMillion: 0.4,
+    cacheCreationPerMillion: 0.1,
+    cacheReadPerMillion: 0.02,
+  },
+  'qwen3-coder-plus': {
+    inputPerMillion: 1,
+    outputPerMillion: 5,
+    cacheCreationPerMillion: 1,
+    cacheReadPerMillion: 0.2,
+  },
+  'qwen3-coder-flash': {
+    inputPerMillion: 0.3,
+    outputPerMillion: 1.5,
+    cacheCreationPerMillion: 0.3,
+    cacheReadPerMillion: 0.06,
   },
 
   // ---------------------------------------------------------------------------
@@ -610,6 +712,14 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
   },
 };
 
+const MODEL_PRICING_ALIASES: Record<string, string> = {
+  // Keep catalog-only IDs on explicit priced equivalents.
+  'qwen3-coder': 'qwen3-coder-plus',
+  'qwen3-235b': 'qwen3-max',
+  'qwen3-vl-plus': 'qwen3.5-plus',
+  'qwen3-32b': 'qwen3.5-plus',
+};
+
 // Default pricing for unknown models
 const UNKNOWN_MODEL_PRICING: ModelPricing = {
   inputPerMillion: 3.0,
@@ -628,8 +738,76 @@ const UNKNOWN_MODEL_PRICING: ModelPricing = {
  */
 function normalizeModelName(model: string): string {
   // Remove provider prefixes (e.g., "anthropic/claude-..." -> "claude-...")
-  const normalized = model.toLowerCase().replace(/^[^/]+\//, '');
+  const normalized = model
+    .trim()
+    .toLowerCase()
+    .replace(/^[^/]+\//, '');
   return normalized;
+}
+
+/**
+ * Strip trailing date suffix from model name (e.g., "-20260101")
+ * Claude session IDs can place dates either at the end or before "-thinking".
+ */
+function stripDateSuffix(model: string): string {
+  if (!model.startsWith('claude-')) {
+    return model;
+  }
+
+  return model.replace(/-\d{8}(?=-thinking(?:$|:))/g, '').replace(/-\d{8}(?=$|:)/g, '');
+}
+
+const NORMALIZED_PRICING_REGISTRY: Record<string, ModelPricing> = Object.entries(
+  PRICING_REGISTRY
+).reduce<Record<string, ModelPricing>>((acc, [key, pricing]) => {
+  acc[normalizeModelName(key)] = pricing;
+  return acc;
+}, {});
+
+function getLookupCandidates(model: string): string[] {
+  const normalized = normalizeModelName(model);
+  const baseModel = normalized.split(':')[0];
+
+  const candidates: string[] = [normalized];
+  if (baseModel !== normalized) {
+    candidates.push(baseModel);
+  }
+
+  // Add date-stripped variants (e.g., "claude-opus-4-6-20260101" -> "claude-opus-4-6")
+  const stripped = stripDateSuffix(normalized);
+  if (stripped !== normalized && !candidates.includes(stripped)) {
+    candidates.push(stripped);
+  }
+  const baseStripped = stripDateSuffix(baseModel);
+  if (baseStripped !== baseModel && !candidates.includes(baseStripped)) {
+    candidates.push(baseStripped);
+  }
+
+  return candidates;
+}
+
+function getDirectOrAliasPricing(model: string): ModelPricing | undefined {
+  const directPricing = PRICING_REGISTRY[model];
+  if (directPricing !== undefined) {
+    return directPricing;
+  }
+
+  for (const candidate of getLookupCandidates(model)) {
+    const normalizedPricing = NORMALIZED_PRICING_REGISTRY[candidate];
+    if (normalizedPricing !== undefined) {
+      return normalizedPricing;
+    }
+
+    const alias = MODEL_PRICING_ALIASES[candidate];
+    if (alias !== undefined) {
+      const aliasPricing = NORMALIZED_PRICING_REGISTRY[alias];
+      if (aliasPricing !== undefined) {
+        return aliasPricing;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -638,29 +816,25 @@ function normalizeModelName(model: string): string {
  * @returns ModelPricing for the model or fallback pricing
  */
 export function getModelPricing(model: string): ModelPricing {
-  // Try exact match first
-  if (PRICING_REGISTRY[model]) {
-    return PRICING_REGISTRY[model];
+  const directOrAliasPricing = getDirectOrAliasPricing(model);
+  if (directOrAliasPricing !== undefined) {
+    return directOrAliasPricing;
   }
 
-  // Try normalized match
-  const normalized = normalizeModelName(model);
-  if (PRICING_REGISTRY[normalized]) {
-    return PRICING_REGISTRY[normalized];
-  }
-
-  // Try suffix matching (e.g., "claude-sonnet-4-5" matches "*-claude-sonnet-4-5")
-  for (const [key, pricing] of Object.entries(PRICING_REGISTRY)) {
-    if (normalized.endsWith(key) || key.endsWith(normalized)) {
-      return pricing;
+  for (const candidate of getLookupCandidates(model)) {
+    // Try suffix matching (e.g., "claude-sonnet-4-5" matches "*-claude-sonnet-4-5")
+    for (const [key, pricing] of Object.entries(NORMALIZED_PRICING_REGISTRY)) {
+      if (candidate.endsWith(key) || key.endsWith(candidate)) {
+        return pricing;
+      }
     }
-  }
 
-  // Try partial matching for model families
-  for (const [key, pricing] of Object.entries(PRICING_REGISTRY)) {
-    // Match by model family prefix
-    if (normalized.startsWith(key.split('-').slice(0, 2).join('-'))) {
-      return pricing;
+    // Try partial matching for model families
+    for (const [key, pricing] of Object.entries(NORMALIZED_PRICING_REGISTRY)) {
+      // Match by model family prefix
+      if (candidate.startsWith(key.split('-').slice(0, 2).join('-'))) {
+        return pricing;
+      }
     }
   }
 
@@ -697,8 +871,5 @@ export function getKnownModels(): string[] {
  * Check if a model has custom pricing (not using fallback)
  */
 export function hasCustomPricing(model: string): boolean {
-  return (
-    PRICING_REGISTRY[model] !== undefined ||
-    PRICING_REGISTRY[normalizeModelName(model)] !== undefined
-  );
+  return getDirectOrAliasPricing(model) !== undefined;
 }

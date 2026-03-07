@@ -2,7 +2,10 @@
  * Unit tests for remote-proxy-client module
  */
 import { describe, it, expect } from 'bun:test';
-import type { RemoteProxyClientConfig, RemoteProxyStatus } from '../../../src/cliproxy/remote-proxy-client';
+import {
+  type RemoteProxyClientConfig,
+  type RemoteProxyStatus,
+} from '../../../src/cliproxy/remote-proxy-client';
 
 // We test the module's type exports and error handling logic
 // Actual HTTP calls are not mocked in this unit test - use integration tests for that
@@ -116,15 +119,15 @@ describe('remote-proxy-client', () => {
   });
 
   describe('health check URL construction', () => {
-    // CLIProxyAPI uses /v1/models for health checks (no /health endpoint)
-    it('should construct correct health check URL pattern using /v1/models', () => {
+    // CLIProxyAPI uses root endpoint for liveness checks (no /health endpoint)
+    it('should construct correct health check URL pattern using /', () => {
       const config: RemoteProxyClientConfig = {
         host: '192.168.1.100',
         port: 8317,
         protocol: 'http',
       };
-      const expectedUrl = `${config.protocol}://${config.host}:${config.port}/v1/models`;
-      expect(expectedUrl).toBe('http://192.168.1.100:8317/v1/models');
+      const expectedUrl = `${config.protocol}://${config.host}:${config.port}/`;
+      expect(expectedUrl).toBe('http://192.168.1.100:8317/');
     });
 
     it('should construct HTTPS URL when protocol is https', () => {
@@ -133,8 +136,8 @@ describe('remote-proxy-client', () => {
         port: 443,
         protocol: 'https',
       };
-      const expectedUrl = `${config.protocol}://${config.host}:${config.port}/v1/models`;
-      expect(expectedUrl).toBe('https://secure.example.com:443/v1/models');
+      const expectedUrl = `${config.protocol}://${config.host}:${config.port}/`;
+      expect(expectedUrl).toBe('https://secure.example.com:443/');
     });
   });
 

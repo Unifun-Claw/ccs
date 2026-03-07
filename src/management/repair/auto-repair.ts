@@ -4,8 +4,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { ok, warn, fail, info, header, color } from '../../utils/ui';
+import { getCcsDir } from '../../utils/config-manager';
 import {
   CLIPROXY_DEFAULT_PORT,
   configNeedsRegeneration,
@@ -15,6 +15,7 @@ import {
 import { getPortProcess, isCLIProxyProcess } from '../../utils/port-utils';
 import { killProcessOnPort, getPlatformName } from '../../utils/platform-commands';
 import { createSpinner } from '../checks/types';
+import { fixImageAnalysisConfig } from '../checks/image-analysis-check';
 
 const ora = createSpinner();
 
@@ -27,8 +28,6 @@ const ora = createSpinner();
  * 4. OAuth callback ports blocked by CLIProxy
  */
 export async function runAutoRepair(): Promise<void> {
-  const homedir = os.homedir();
-
   console.log('');
   console.log(header('AUTO-FIX MODE'));
   console.log('');
@@ -110,7 +109,7 @@ export async function runAutoRepair(): Promise<void> {
 
   // Fix 4: Fix shared symlinks (settings.json broken by Claude CLI toggle thinking, etc.)
   const symlinkSpinner = ora('Checking shared settings.json symlink').start();
-  const sharedSettings = path.join(homedir, '.ccs', 'shared', 'settings.json');
+  const sharedSettings = path.join(getCcsDir(), 'shared', 'settings.json');
   try {
     if (fs.existsSync(sharedSettings)) {
       const stats = fs.lstatSync(sharedSettings);
@@ -130,6 +129,20 @@ export async function runAutoRepair(): Promise<void> {
     }
   } catch (err) {
     symlinkSpinner.fail(`${fail('Error')} Could not fix symlink: ${(err as Error).message}`);
+  }
+
+  // Fix 5: Image analysis config validation
+  const imageSpinner = ora('Checking image analysis config').start();
+  try {
+    const imageFixed = await fixImageAnalysisConfig();
+    if (imageFixed) {
+      imageSpinner.succeed(`${ok('Fixed')} Repaired image analysis configuration`);
+      fixed++;
+    } else {
+      imageSpinner.succeed(`${ok('OK')} Image analysis config is valid`);
+    }
+  } catch (err) {
+    imageSpinner.fail(`${fail('Error')} Could not fix image config: ${(err as Error).message}`);
   }
 
   // Summary

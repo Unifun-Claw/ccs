@@ -28,6 +28,10 @@ interface ModelConfigTabProps {
   sonnetModel?: string;
   haikuModel?: string;
   providerModels: Array<{ id: string; owned_by: string }>;
+  /** Whether extended context (1M tokens) is enabled */
+  extendedContextEnabled?: boolean;
+  /** Callback when extended context toggle changes */
+  onExtendedContextToggle?: (enabled: boolean) => void;
   onApplyPreset: (updates: Record<string, string>) => void;
   onUpdateEnvValue: (key: string, value: string) => void;
   onOpenCustomPreset: () => void;
@@ -67,6 +71,8 @@ export function ModelConfigTab({
   sonnetModel,
   haikuModel,
   providerModels,
+  extendedContextEnabled,
+  onExtendedContextToggle,
   onApplyPreset,
   onUpdateEnvValue,
   onOpenCustomPreset,
@@ -88,6 +94,14 @@ export function ModelConfigTab({
   privacyMode,
   isRemoteMode,
 }: ModelConfigTabProps) {
+  const normalizedProvider = provider.toLowerCase();
+  const showQuota =
+    (QUOTA_SUPPORTED_PROVIDERS.includes(normalizedProvider as QuotaSupportedProvider) ||
+      ['anthropic', 'antigravity', 'gemini-cli', 'copilot', 'github-copilot'].includes(
+        normalizedProvider
+      )) &&
+    !isRemoteMode;
+
   // Kiro-specific: no-incognito setting (defaults to true = normal browser)
   const isKiro = provider === 'kiro';
   const [kiroNoIncognito, setKiroNoIncognito] = useState(true);
@@ -146,6 +160,9 @@ export function ModelConfigTab({
           sonnetModel={sonnetModel}
           haikuModel={haikuModel}
           providerModels={providerModels}
+          provider={provider}
+          extendedContextEnabled={extendedContextEnabled}
+          onExtendedContextToggle={onExtendedContextToggle}
           onApplyPreset={onApplyPreset}
           onUpdateEnvValue={onUpdateEnvValue}
           onOpenCustomPreset={onOpenCustomPreset}
@@ -168,9 +185,7 @@ export function ModelConfigTab({
           isBulkPausing={isBulkPausing}
           isBulkResuming={isBulkResuming}
           privacyMode={privacyMode}
-          showQuota={
-            QUOTA_SUPPORTED_PROVIDERS.includes(provider as QuotaSupportedProvider) && !isRemoteMode
-          }
+          showQuota={showQuota}
           isKiro={isKiro}
           kiroNoIncognito={kiroNoIncognito}
           onKiroNoIncognitoChange={saveKiroNoIncognito}

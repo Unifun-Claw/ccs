@@ -20,7 +20,9 @@ export function isCcsWebSearchHook(hook: Record<string, unknown>): boolean {
   if (typeof command !== 'string') return false;
 
   // Normalize path separators for cross-platform matching
-  const normalizedCommand = command.replace(/\\/g, '/');
+  const normalizedCommand = command
+    .replace(/\\/g, '/') // Windows backslashes
+    .replace(/\/+/g, '/'); // Collapse multiple slashes
   return normalizedCommand.includes('.ccs/hooks/websearch-transformer');
 }
 
@@ -46,5 +48,11 @@ export function deduplicateCcsHooks(settings: Record<string, unknown>): boolean 
     return false; // Remove subsequent duplicates
   });
 
-  return hooks.PreToolUse.length < originalLength;
+  const newLength = hooks.PreToolUse.length;
+  if (process.env.CCS_DEBUG && newLength < originalLength) {
+    const removedCount = originalLength - newLength;
+    console.error(`Removed ${removedCount} duplicate CCS WebSearch hook(s)`);
+  }
+
+  return newLength < originalLength;
 }

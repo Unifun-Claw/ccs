@@ -3,13 +3,26 @@ import { twMerge } from 'tailwind-merge';
 import type {
   CodexQuotaWindow,
   CodexQuotaResult,
+  ClaudeQuotaResult,
   GeminiCliBucket,
   GeminiCliQuotaResult,
+  GhcpQuotaResult,
   QuotaResult,
 } from './api-client';
+import i18n from './i18n';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+/**
+ * Format quota percentage for UI display.
+ * Uses rounded whole numbers to keep quota labels compact and consistent.
+ */
+export function formatQuotaPercent(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  const clamped = Math.max(0, Math.min(100, value));
+  return `${Math.round(clamped)}`;
 }
 
 // Vibrant Tones Palette
@@ -31,10 +44,12 @@ const PROVIDER_COLORS: Record<string, string> = {
   agy: '#f3722c', // Pumpkin
   gemini: '#277da1', // Cerulean
   codex: '#f8961e', // Carrot
+  claude: '#4d908e', // Dark Cyan
   vertex: '#577590', // Blue Slate
   iflow: '#f94144', // Strawberry
   qwen: '#f9c74f', // Tuscan
   kiro: '#4d908e', // Dark Cyan (AWS-inspired)
+  ghcp: '#43aa8b', // Seaweed (GitHub-inspired)
   copilot: '#43aa8b', // Seaweed (GitHub-inspired)
 };
 
@@ -203,10 +218,15 @@ export function getClaudeResetTime<
 }
 
 // Known primary models to show when exhausted (removed from API response)
+const AGY_DENYLIST_REGEX = /claude-(?:opus|sonnet)-4(?:[.-])5(?:-thinking)?(?=(?:$|[^a-z0-9]))/i;
+
+export function isDeniedAgyModelId(modelId: string): boolean {
+  return AGY_DENYLIST_REGEX.test((modelId || '').trim());
+}
+
 const KNOWN_PRIMARY_MODELS = [
-  { name: 'claude-opus-4-5-thinking', displayName: 'Claude Opus 4.5 (Thinking)' },
-  { name: 'claude-sonnet-4-5', displayName: 'Claude Sonnet 4.5' },
-  { name: 'claude-sonnet-4-5-thinking', displayName: 'Claude Sonnet 4.5 (Thinking)' },
+  { name: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)' },
+  { name: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6' },
   { name: 'gpt-oss-120b', displayName: 'GPT-OSS 120B (Medium)' },
 ];
 
@@ -306,12 +326,191 @@ export function groupModelsByTier(models: TieredModel[]): Map<ModelTier, TieredM
   return groups;
 }
 
+export type CodexWindowKind =
+  | 'usage-5h'
+  | 'usage-weekly'
+  | 'code-review-5h'
+  | 'code-review-weekly'
+  | 'code-review'
+  | 'unknown';
+
+/**
+ * Map raw Codex API window labels into semantic buckets.
+ */
+export function getCodexWindowKind(label: string): CodexWindowKind {
+  const lower = (label || '').toLowerCase();
+  const isCodeReview = lower.includes('code review') || lower.includes('code_review');
+  const isPrimary = lower.includes('primary');
+  const isSecondary = lower.includes('secondary');
+
+  if (isCodeReview) {
+    if (isPrimary) return 'code-review-5h';
+    if (isSecondary) return 'code-review-weekly';
+    return 'code-review';
+  }
+
+  if (isPrimary) return 'usage-5h';
+  if (isSecondary) return 'usage-weekly';
+  return 'unknown';
+}
+
+type CodexWindowSummary = Pick<CodexQuotaWindow, 'label' | 'resetAfterSeconds'>;
+
+/**
+ * Infer code-review window cadence by comparing against usage windows.
+ * This keeps labels stable as countdown values decrease over time.
+ */
+function inferCodeReviewCadence(
+  window: CodexWindowSummary,
+  allWindows: CodexWindowSummary[]
+): '5h' | 'weekly' | null {
+  const kind = getCodexWindowKind(window.label);
+  if (kind === 'code-review-weekly') return 'weekly';
+
+  const reset = window.resetAfterSeconds;
+  if (typeof reset !== 'number' || !isFinite(reset) || reset <= 0) return null;
+
+  const usage5h = allWindows.find(
+    (w) =>
+      getCodexWindowKind(w.label) === 'usage-5h' &&
+      typeof w.resetAfterSeconds === 'number' &&
+      isFinite(w.resetAfterSeconds) &&
+      w.resetAfterSeconds > 0
+  );
+  const usageWeekly = allWindows.find(
+    (w) =>
+      getCodexWindowKind(w.label) === 'usage-weekly' &&
+      typeof w.resetAfterSeconds === 'number' &&
+      isFinite(w.resetAfterSeconds) &&
+      w.resetAfterSeconds > 0
+  );
+
+  if (!usage5h || !usageWeekly) return null;
+
+  const diffTo5h = Math.abs(reset - (usage5h.resetAfterSeconds as number));
+  const diffToWeekly = Math.abs(reset - (usageWeekly.resetAfterSeconds as number));
+  return diffToWeekly <= diffTo5h ? 'weekly' : '5h';
+}
+
+export function getCodexWindowDisplayLabel(
+  labelOrWindow: string | CodexWindowSummary,
+  allWindows: CodexWindowSummary[] = []
+): string {
+  const label = typeof labelOrWindow === 'string' ? labelOrWindow : labelOrWindow.label;
+  const currentWindow: CodexWindowSummary =
+    typeof labelOrWindow === 'string'
+      ? { label, resetAfterSeconds: null }
+      : { label, resetAfterSeconds: labelOrWindow.resetAfterSeconds };
+  const context = allWindows.length > 0 ? allWindows : [currentWindow];
+
+  switch (getCodexWindowKind(label)) {
+    case 'usage-5h':
+      return '5h usage limit';
+    case 'usage-weekly':
+      return 'Weekly usage limit';
+    case 'code-review-5h':
+    case 'code-review-weekly':
+    case 'code-review': {
+      const inferred = inferCodeReviewCadence(currentWindow, context);
+      if (inferred === '5h') return 'Code review (5h)';
+      if (inferred === 'weekly') return 'Code review (weekly)';
+      return 'Code review';
+    }
+    case 'unknown':
+      return label;
+  }
+}
+
+export interface CodexQuotaBreakdown {
+  fiveHourWindow: CodexQuotaWindow | null;
+  weeklyWindow: CodexQuotaWindow | null;
+  codeReviewWindows: CodexQuotaWindow[];
+  unknownWindows: CodexQuotaWindow[];
+}
+
+/**
+ * Break down Codex windows into core usage windows (5h + weekly) and auxiliary windows.
+ */
+export function getCodexQuotaBreakdown(windows: CodexQuotaWindow[]): CodexQuotaBreakdown {
+  if (!windows || windows.length === 0) {
+    return {
+      fiveHourWindow: null,
+      weeklyWindow: null,
+      codeReviewWindows: [],
+      unknownWindows: [],
+    };
+  }
+
+  let fiveHourWindow: CodexQuotaWindow | null = null;
+  let weeklyWindow: CodexQuotaWindow | null = null;
+  const codeReviewWindows: CodexQuotaWindow[] = [];
+  const unknownWindows: CodexQuotaWindow[] = [];
+  const nonCodeReviewWindows: CodexQuotaWindow[] = [];
+
+  for (const window of windows) {
+    const kind = getCodexWindowKind(window.label);
+
+    switch (kind) {
+      case 'usage-5h':
+        if (!fiveHourWindow) fiveHourWindow = window;
+        nonCodeReviewWindows.push(window);
+        break;
+      case 'usage-weekly':
+        if (!weeklyWindow) weeklyWindow = window;
+        nonCodeReviewWindows.push(window);
+        break;
+      case 'code-review-5h':
+      case 'code-review-weekly':
+      case 'code-review':
+        codeReviewWindows.push(window);
+        break;
+      case 'unknown':
+        unknownWindows.push(window);
+        nonCodeReviewWindows.push(window);
+        break;
+    }
+  }
+
+  // Fallback for API label changes: infer 5h/weekly from reset horizon when explicit labels are absent.
+  if ((!fiveHourWindow || !weeklyWindow) && nonCodeReviewWindows.length > 0) {
+    const withReset = nonCodeReviewWindows
+      .filter((w) => typeof w.resetAfterSeconds === 'number' && w.resetAfterSeconds >= 0)
+      .sort((a, b) => (a.resetAfterSeconds || 0) - (b.resetAfterSeconds || 0));
+
+    if (!fiveHourWindow) {
+      fiveHourWindow = withReset[0] || nonCodeReviewWindows[0] || null;
+    }
+
+    if (!weeklyWindow) {
+      weeklyWindow =
+        withReset.length > 1
+          ? withReset[withReset.length - 1]
+          : nonCodeReviewWindows.find((w) => w !== fiveHourWindow) || null;
+    }
+  }
+
+  return {
+    fiveHourWindow,
+    weeklyWindow,
+    codeReviewWindows,
+    unknownWindows,
+  };
+}
+
 /**
  * Get minimum remaining percentage across Codex rate limit windows
  */
 export function getMinCodexQuota(windows: CodexQuotaWindow[]): number | null {
   if (!windows || windows.length === 0) return null;
-  const percentages = windows.map((w) => w.remainingPercent);
+
+  const { fiveHourWindow, weeklyWindow } = getCodexQuotaBreakdown(windows);
+  const usageWindows = [fiveHourWindow, weeklyWindow].filter(
+    (w, index, arr): w is CodexQuotaWindow => !!w && arr.indexOf(w) === index
+  );
+
+  // Primary account quota should be driven by core usage windows, not code-review windows.
+  const sourceWindows = usageWindows.length > 0 ? usageWindows : windows;
+  const percentages = sourceWindows.map((w) => w.remainingPercent);
   return Math.min(...percentages);
 }
 
@@ -320,7 +519,55 @@ export function getMinCodexQuota(windows: CodexQuotaWindow[]): number | null {
  */
 export function getCodexResetTime(windows: CodexQuotaWindow[]): string | null {
   if (!windows || windows.length === 0) return null;
-  const resets = windows.map((w) => w.resetAt).filter((t): t is string => t !== null);
+
+  const { fiveHourWindow, weeklyWindow } = getCodexQuotaBreakdown(windows);
+  const usageWindows = [fiveHourWindow, weeklyWindow].filter(
+    (w, index, arr): w is CodexQuotaWindow => !!w && arr.indexOf(w) === index
+  );
+  const sourceWindows = usageWindows.length > 0 ? usageWindows : windows;
+  const resets = sourceWindows.map((w) => w.resetAt).filter((t): t is string => t !== null);
+  if (resets.length === 0) return null;
+  return resets.sort()[0];
+}
+
+/**
+ * Get minimum remaining percentage across Claude policy windows.
+ */
+export function getMinClaudePolicyQuota(quota: ClaudeQuotaResult): number | null {
+  if (!quota.success) return null;
+
+  const coreWindows = [quota.coreUsage?.fiveHour, quota.coreUsage?.weekly].filter(
+    (window): window is NonNullable<typeof window> => !!window
+  );
+  if (coreWindows.length > 0) {
+    return Math.min(...coreWindows.map((window) => window.remainingPercent));
+  }
+
+  const usageWindows = quota.windows.filter((window) => window.rateLimitType !== 'overage');
+  if (usageWindows.length > 0) {
+    return Math.min(...usageWindows.map((window) => window.remainingPercent));
+  }
+
+  return null;
+}
+
+/**
+ * Get earliest reset time from Claude policy windows.
+ */
+export function getClaudePolicyResetTime(quota: ClaudeQuotaResult): string | null {
+  if (!quota.success) return null;
+
+  const coreResets = [quota.coreUsage?.fiveHour?.resetAt, quota.coreUsage?.weekly?.resetAt].filter(
+    (value): value is string => !!value
+  );
+  if (coreResets.length > 0) {
+    return coreResets.sort()[0];
+  }
+
+  const resets = quota.windows
+    .filter((window) => window.rateLimitType !== 'overage')
+    .map((window) => window.resetAt)
+    .filter((value): value is string => value !== null);
   if (resets.length === 0) return null;
   return resets.sort()[0];
 }
@@ -344,27 +591,298 @@ export function getGeminiResetTime(buckets: GeminiCliBucket[]): string | null {
   return resets.sort()[0];
 }
 
+/**
+ * Get minimum remaining percentage across GitHub Copilot quota snapshots
+ */
+export function getMinGhcpQuota(snapshots: GhcpQuotaResult['snapshots']): number | null {
+  if (!snapshots) return null;
+
+  const percentages = [
+    snapshots.premiumInteractions.percentRemaining,
+    snapshots.chat.percentRemaining,
+    snapshots.completions.percentRemaining,
+  ].filter((p) => typeof p === 'number' && isFinite(p));
+
+  if (percentages.length === 0) return null;
+  return Math.min(...percentages);
+}
+
+/**
+ * Get reset time from GitHub Copilot quota result
+ */
+export function getGhcpResetTime(quotaResetDate: string | null): string | null {
+  return quotaResetDate;
+}
+
 // ==================== Unified Quota Type Guards ====================
 
 /** Unified quota result type for provider-agnostic handling */
-export type UnifiedQuotaResult = QuotaResult | CodexQuotaResult | GeminiCliQuotaResult;
+export type UnifiedQuotaResult =
+  | QuotaResult
+  | CodexQuotaResult
+  | ClaudeQuotaResult
+  | GeminiCliQuotaResult
+  | GhcpQuotaResult;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
 
 /** Type guard: Check if quota result is from Antigravity (agy) provider */
 export function isAgyQuotaResult(quota: UnifiedQuotaResult): quota is QuotaResult {
-  return 'models' in quota && Array.isArray((quota as QuotaResult).models);
+  if (!isRecord(quota)) return false;
+  const models = (quota as Partial<QuotaResult>).models;
+  return typeof quota.success === 'boolean' && Array.isArray(models);
 }
 
 /** Type guard: Check if quota result is from Codex provider */
 export function isCodexQuotaResult(quota: UnifiedQuotaResult): quota is CodexQuotaResult {
-  return 'windows' in quota && Array.isArray((quota as CodexQuotaResult).windows);
+  if (!isRecord(quota)) return false;
+
+  const candidate = quota as Partial<CodexQuotaResult>;
+  if (typeof candidate.success !== 'boolean') return false;
+  if (!Array.isArray(candidate.windows)) return false;
+  if (!('planType' in candidate)) return false;
+
+  return candidate.windows.every(
+    (window) =>
+      isRecord(window) &&
+      typeof window.label === 'string' &&
+      isFiniteNumber(window.usedPercent) &&
+      isFiniteNumber(window.remainingPercent)
+  );
+}
+
+/** Type guard: Check if quota result is from Claude provider */
+export function isClaudeQuotaResult(quota: UnifiedQuotaResult): quota is ClaudeQuotaResult {
+  if (!isRecord(quota)) return false;
+
+  const candidate = quota as Partial<ClaudeQuotaResult>;
+  if (typeof candidate.success !== 'boolean') return false;
+  if (!Array.isArray(candidate.windows)) return false;
+  if ('planType' in candidate) return false;
+
+  return candidate.windows.every(
+    (window) =>
+      isRecord(window) &&
+      typeof window.rateLimitType === 'string' &&
+      isFiniteNumber(window.remainingPercent) &&
+      typeof window.status === 'string'
+  );
 }
 
 /** Type guard: Check if quota result is from Gemini CLI provider */
 export function isGeminiQuotaResult(quota: UnifiedQuotaResult): quota is GeminiCliQuotaResult {
-  return 'buckets' in quota && Array.isArray((quota as GeminiCliQuotaResult).buckets);
+  if (!isRecord(quota)) return false;
+
+  const candidate = quota as Partial<GeminiCliQuotaResult>;
+  if (typeof candidate.success !== 'boolean') return false;
+  if (!Array.isArray(candidate.buckets)) return false;
+
+  return candidate.buckets.every(
+    (bucket) =>
+      isRecord(bucket) &&
+      typeof bucket.id === 'string' &&
+      isFiniteNumber(bucket.remainingFraction) &&
+      isFiniteNumber(bucket.remainingPercent) &&
+      Array.isArray(bucket.modelIds)
+  );
+}
+
+/** Type guard: Check if quota result is from GitHub Copilot (ghcp) provider */
+export function isGhcpQuotaResult(quota: UnifiedQuotaResult): quota is GhcpQuotaResult {
+  if (!isRecord(quota)) return false;
+
+  const candidate = quota as Partial<GhcpQuotaResult>;
+  const snapshots = candidate.snapshots as Record<string, unknown> | null | undefined;
+  if (typeof candidate.success !== 'boolean') return false;
+  if (!isRecord(snapshots)) return false;
+
+  const snapshotKeys: Array<keyof GhcpQuotaResult['snapshots']> = [
+    'premiumInteractions',
+    'chat',
+    'completions',
+  ];
+  return snapshotKeys.every((key) => {
+    const snapshot = snapshots[key] as Record<string, unknown> | undefined;
+    return (
+      isRecord(snapshot) &&
+      isFiniteNumber(snapshot.percentRemaining) &&
+      isFiniteNumber(snapshot.percentUsed)
+    );
+  });
 }
 
 // ==================== Unified Quota Helpers ====================
+
+export interface QuotaFailureInfo {
+  label: string;
+  summary: string;
+  actionHint: string | null;
+  technicalDetail: string | null;
+  rawDetail: string | null;
+  tone: 'warning' | 'muted' | 'destructive';
+}
+
+function buildQuotaTechnicalDetail(quota: UnifiedQuotaResult): string | null {
+  const details: string[] = [];
+  if (typeof quota.httpStatus === 'number') {
+    details.push(`HTTP ${quota.httpStatus}`);
+  }
+  if (typeof quota.errorCode === 'string' && quota.errorCode.trim()) {
+    details.push(quota.errorCode.trim());
+  }
+  return details.length > 0 ? details.join(' | ') : null;
+}
+
+function buildQuotaRawDetail(
+  quota: UnifiedQuotaResult,
+  summary: string,
+  technicalDetail: string | null
+): string | null {
+  const rawDetail = quota.errorDetail?.trim() || null;
+  if (!rawDetail) return null;
+
+  const normalizedRawDetail = rawDetail.toLowerCase();
+  if (normalizedRawDetail === summary.toLowerCase()) {
+    return null;
+  }
+  if (technicalDetail && normalizedRawDetail === technicalDetail.toLowerCase()) {
+    return null;
+  }
+
+  return rawDetail;
+}
+
+export function getQuotaFailureInfo(
+  quota: UnifiedQuotaResult | null | undefined
+): QuotaFailureInfo | null {
+  if (!quota || quota.success) {
+    return null;
+  }
+
+  const summary = quota.error?.trim() || 'Quota information unavailable';
+  const actionHint = quota.actionHint?.trim() || null;
+  const errorCode = quota.errorCode?.trim().toLowerCase() || '';
+  const technicalDetail = buildQuotaTechnicalDetail(quota);
+  const rawDetail = buildQuotaRawDetail(quota, summary, technicalDetail);
+  const lowerSummary = summary.toLowerCase();
+
+  if (
+    quota.needsReauth ||
+    errorCode === 'token_expired' ||
+    errorCode === 'reauth_required' ||
+    lowerSummary.includes('token expired') ||
+    lowerSummary.includes('re-authenticate') ||
+    lowerSummary.includes('reauth') ||
+    lowerSummary.includes('expired or invalid')
+  ) {
+    return {
+      label: i18n.t('accountCard.failureLabelReauth'),
+      summary,
+      actionHint: actionHint || i18n.t('accountCard.failureHintReauth'),
+      technicalDetail,
+      rawDetail,
+      tone: 'warning',
+    };
+  }
+
+  if (
+    errorCode === 'deactivated_workspace' ||
+    quota.httpStatus === 402 ||
+    lowerSummary.includes('workspace deactivated') ||
+    lowerSummary.includes('payment or workspace access required')
+  ) {
+    return {
+      label: i18n.t('accountCard.failureLabelWorkspace'),
+      summary,
+      actionHint: actionHint || i18n.t('accountCard.failureHintWorkspace'),
+      technicalDetail,
+      rawDetail,
+      tone: 'warning',
+    };
+  }
+
+  if (
+    quota.isForbidden ||
+    quota.httpStatus === 403 ||
+    errorCode === 'quota_api_forbidden' ||
+    lowerSummary.includes('forbidden')
+  ) {
+    return {
+      label: i18n.t('accountCard.failureLabelNoAccess'),
+      summary,
+      actionHint: actionHint || i18n.t('accountCard.failureHintNoAccess'),
+      technicalDetail,
+      rawDetail,
+      tone: 'muted',
+    };
+  }
+
+  if (
+    quota.httpStatus === 429 ||
+    errorCode === 'rate_limited' ||
+    lowerSummary.includes('rate limited')
+  ) {
+    return {
+      label: i18n.t('accountCard.failureLabelRetry'),
+      summary,
+      actionHint: actionHint || i18n.t('accountCard.failureHintRetry'),
+      technicalDetail,
+      rawDetail,
+      tone: 'warning',
+    };
+  }
+
+  if (
+    errorCode === 'auth_file_missing' ||
+    errorCode === 'missing_account_id' ||
+    lowerSummary.includes('auth file not found') ||
+    lowerSummary.includes('missing chatgpt-account-id')
+  ) {
+    return {
+      label: i18n.t('accountCard.failureLabelReconnect'),
+      summary,
+      actionHint: actionHint || i18n.t('accountCard.failureHintReconnect'),
+      technicalDetail,
+      rawDetail,
+      tone: 'muted',
+    };
+  }
+
+  if (
+    quota.retryable ||
+    errorCode === 'network_timeout' ||
+    errorCode === 'network_error' ||
+    errorCode === 'provider_unavailable' ||
+    lowerSummary.includes('timeout') ||
+    lowerSummary.includes('network') ||
+    lowerSummary.includes('fetch failed') ||
+    lowerSummary.includes('service unavailable')
+  ) {
+    return {
+      label: i18n.t('accountCard.failureLabelTemporary'),
+      summary,
+      actionHint: actionHint || i18n.t('accountCard.failureHintTemporary'),
+      technicalDetail,
+      rawDetail,
+      tone: 'warning',
+    };
+  }
+
+  return {
+    label: i18n.t('accountCard.failureLabelUnavailable'),
+    summary,
+    actionHint,
+    technicalDetail,
+    rawDetail,
+    tone: 'muted',
+  };
+}
 
 /**
  * Get minimum quota percentage for any provider
@@ -375,8 +893,9 @@ export function getProviderMinQuota(
   quota: UnifiedQuotaResult | null | undefined
 ): number | null {
   if (!quota?.success) return null;
+  const normalizedProvider = provider.trim().toLowerCase();
 
-  switch (provider) {
+  switch (normalizedProvider) {
     case 'agy':
       if (isAgyQuotaResult(quota)) {
         return getMinClaudeQuota(quota.models);
@@ -387,9 +906,21 @@ export function getProviderMinQuota(
         return getMinCodexQuota(quota.windows);
       }
       return null;
+    case 'claude':
+    case 'anthropic':
+      if (isClaudeQuotaResult(quota)) {
+        return getMinClaudePolicyQuota(quota);
+      }
+      return null;
     case 'gemini':
       if (isGeminiQuotaResult(quota)) {
         return getMinGeminiQuota(quota.buckets);
+      }
+      return null;
+    case 'ghcp':
+    case 'github-copilot':
+      if (isGhcpQuotaResult(quota)) {
+        return getMinGhcpQuota(quota.snapshots);
       }
       return null;
     default:
@@ -406,8 +937,9 @@ export function getProviderResetTime(
   quota: UnifiedQuotaResult | null | undefined
 ): string | null {
   if (!quota?.success) return null;
+  const normalizedProvider = provider.trim().toLowerCase();
 
-  switch (provider) {
+  switch (normalizedProvider) {
     case 'agy':
       if (isAgyQuotaResult(quota)) {
         return getClaudeResetTime(quota.models);
@@ -418,9 +950,21 @@ export function getProviderResetTime(
         return getCodexResetTime(quota.windows);
       }
       return null;
+    case 'claude':
+    case 'anthropic':
+      if (isClaudeQuotaResult(quota)) {
+        return getClaudePolicyResetTime(quota);
+      }
+      return null;
     case 'gemini':
       if (isGeminiQuotaResult(quota)) {
         return getGeminiResetTime(quota.buckets);
+      }
+      return null;
+    case 'ghcp':
+    case 'github-copilot':
+      if (isGhcpQuotaResult(quota)) {
+        return getGhcpResetTime(quota.quotaResetDate);
       }
       return null;
     default:

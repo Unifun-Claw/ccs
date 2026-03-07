@@ -2,12 +2,106 @@
  * Binary Downloader
  * Handles downloading files with retry logic, progress tracking, and redirect following.
  * Robust handling for transient network errors (socket hang up, ECONNRESET, etc.)
+ * Respects http_proxy, https_proxy, and all_proxy environment variables.
  */
 
 import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { HttpProxyAgent } from 'http-proxy-agent';
 import { DownloadResult, ProgressCallback } from '../types';
+
+/**
+ * Get proxy URL from environment variables.
+ * Checks: https_proxy, HTTPS_PROXY, http_proxy, HTTP_PROXY, all_proxy, ALL_PROXY
+ * @param isHttps Whether the target URL is HTTPS
+ * @returns Proxy URL or undefined if no proxy configured
+ */
+function getProxyUrl(isHttps: boolean): string | undefined {
+  if (isHttps) {
+    return (
+      process.env.https_proxy ||
+      process.env.HTTPS_PROXY ||
+      process.env.all_proxy ||
+      process.env.ALL_PROXY
+    );
+  }
+  return (
+    process.env.http_proxy ||
+    process.env.HTTP_PROXY ||
+    process.env.all_proxy ||
+    process.env.ALL_PROXY
+  );
+}
+
+/**
+ * Check if a hostname should bypass the proxy based on NO_PROXY/no_proxy env var.
+ * Supports: exact match, wildcard (*), and domain suffix (.example.com)
+ * @param hostname The hostname to check
+ * @returns true if the hostname should bypass the proxy
+ */
+function shouldBypassProxy(hostname: string): boolean {
+  const noProxy = process.env.no_proxy || process.env.NO_PROXY;
+  if (!noProxy) return false;
+
+  const noProxyList = noProxy.split(',').map((s) => s.trim().toLowerCase());
+  const host = hostname.toLowerCase();
+
+  return noProxyList.some((pattern) => {
+    if (pattern === '*') return true;
+    if (pattern.startsWith('.')) {
+      return host.endsWith(pattern) || host === pattern.slice(1);
+    }
+    return host === pattern || host.endsWith('.' + pattern);
+  });
+}
+
+/**
+ * Extract hostname from URL.
+ * @param url The URL to parse
+ * @returns Hostname or empty string if invalid
+ */
+function getHostname(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Create appropriate proxy agent based on URL protocol.
+ * Respects NO_PROXY/no_proxy for bypassing specific hosts.
+ * @param url Target URL to determine protocol
+ * @returns Proxy agent or false (no agent/pooling disabled)
+ */
+function getProxyAgent(url: string): http.Agent | https.Agent | false {
+  const isHttps = url.startsWith('https');
+  const proxyUrl = getProxyUrl(isHttps);
+
+  if (!proxyUrl) {
+    return false; // No proxy configured, disable connection pooling for clean exit
+  }
+
+  // Check if this host should bypass the proxy
+  const hostname = getHostname(url);
+  if (hostname && shouldBypassProxy(hostname)) {
+    return false; // Bypass proxy for this host
+  }
+
+  // Create proxy agent with error handling for malformed URLs
+  try {
+    if (isHttps) {
+      return new HttpsProxyAgent(proxyUrl);
+    }
+    return new HttpProxyAgent(proxyUrl);
+  } catch {
+    // Invalid proxy URL, fall back to direct connection
+    console.error(`[cliproxy] Invalid proxy URL: ${proxyUrl}`);
+    return false;
+  }
+}
 
 /** Default configuration for downloader */
 export interface DownloaderConfig {
@@ -83,13 +177,15 @@ export function isRetryableError(error: Error): boolean {
 /**
  * Download file from URL with progress tracking
  * @param timeout Timeout in ms (default 120000 for large files)
+ * @param maxRedirects Maximum number of redirects to follow (default 10)
  */
 export function downloadFile(
   url: string,
   destPath: string,
   onProgress?: ProgressCallback,
   verbose = false,
-  timeout = 120000
+  timeout = 120000,
+  maxRedirects = 10
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     let resolved = false;
@@ -109,10 +205,14 @@ export function downloadFile(
           cleanup(new Error('Redirect without location header'));
           return;
         }
+        if (maxRedirects <= 0) {
+          cleanup(new Error('Too many redirects'));
+          return;
+        }
         if (verbose) {
           console.error(`[cliproxy] Following redirect: ${redirectUrl}`);
         }
-        downloadFile(redirectUrl, destPath, onProgress, verbose, timeout)
+        downloadFile(redirectUrl, destPath, onProgress, verbose, timeout, maxRedirects - 1)
           .then(resolve)
           .catch(reject);
         return;
@@ -154,12 +254,12 @@ export function downloadFile(
 
     const protocol = url.startsWith('https') ? https : http;
 
-    // Use agent: false to prevent connection pooling (allows process to exit)
+    // Use proxy agent if configured, otherwise disable connection pooling for clean exit
     const options = {
       headers: {
         'User-Agent': 'CCS-CLIProxyPlus-Downloader/1.0',
       },
-      agent: false, // Disable connection pooling for clean exit
+      agent: getProxyAgent(url),
     };
 
     const req = protocol.get(url, options, handleResponse);
@@ -246,7 +346,12 @@ export async function downloadWithRetry(
 /**
  * Fetch text content from URL (single attempt)
  */
-function fetchTextOnce(url: string, verbose = false, timeout = 30000): Promise<string> {
+function fetchTextOnce(
+  url: string,
+  verbose = false,
+  timeout = 30000,
+  maxRedirects = 10
+): Promise<string> {
   return new Promise((resolve, reject) => {
     let resolved = false;
 
@@ -258,7 +363,13 @@ function fetchTextOnce(url: string, verbose = false, timeout = 30000): Promise<s
           reject(new Error('Redirect without location header'));
           return;
         }
-        fetchTextOnce(redirectUrl, verbose, timeout).then(resolve).catch(reject);
+        if (maxRedirects <= 0) {
+          reject(new Error('Too many redirects'));
+          return;
+        }
+        fetchTextOnce(redirectUrl, verbose, timeout, maxRedirects - 1)
+          .then(resolve)
+          .catch(reject);
         return;
       }
 
@@ -288,7 +399,7 @@ function fetchTextOnce(url: string, verbose = false, timeout = 30000): Promise<s
       headers: {
         'User-Agent': 'CCS-CLIProxyPlus-Downloader/1.0',
       },
-      agent: false, // Disable connection pooling for clean exit
+      agent: getProxyAgent(url),
     };
 
     const req = protocol.get(url, options, handleResponse);
@@ -342,7 +453,8 @@ export async function fetchText(url: string, verbose = false, maxRetries = 3): P
 function fetchJsonOnce(
   url: string,
   verbose = false,
-  timeout = 15000
+  timeout = 15000,
+  maxRedirects = 10
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let resolved = false;
@@ -352,7 +464,7 @@ function fetchJsonOnce(
         'User-Agent': 'CCS-CLIProxyPlus-Updater/1.0',
         Accept: 'application/vnd.github.v3+json',
       },
-      agent: false, // Disable connection pooling for clean exit
+      agent: getProxyAgent(url),
     };
 
     const handleResponse = (res: http.IncomingMessage) => {
@@ -362,7 +474,13 @@ function fetchJsonOnce(
           reject(new Error('Redirect without location header'));
           return;
         }
-        fetchJsonOnce(redirectUrl, verbose, timeout).then(resolve).catch(reject);
+        if (maxRedirects <= 0) {
+          reject(new Error('Too many redirects'));
+          return;
+        }
+        fetchJsonOnce(redirectUrl, verbose, timeout, maxRedirects - 1)
+          .then(resolve)
+          .catch(reject);
         return;
       }
 
@@ -445,3 +563,11 @@ export async function fetchJson(
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// Export internal functions for testing
+export const __testExports = {
+  getProxyUrl,
+  shouldBypassProxy,
+  getHostname,
+  getProxyAgent,
+};

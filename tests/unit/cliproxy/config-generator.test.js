@@ -59,10 +59,7 @@ describe('Config Generator', () => {
       assert(!configLine.includes('\\'), 'Should not contain backslashes');
 
       // Verify it's valid YAML format
-      assert.strictEqual(
-        configLine,
-        'auth-dir: "C:/Users/TestUser/.ccs/cliproxy/auth"'
-      );
+      assert.strictEqual(configLine, 'auth-dir: "C:/Users/TestUser/.ccs/cliproxy/auth"');
     });
 
     it('handles multiple consecutive backslashes', () => {
@@ -79,7 +76,10 @@ describe('Config Generator', () => {
       const complexPath = 'D:\\Projects\\ccs-2024\\test\\.ccs\\auth-tokens\\provider.json';
       const normalizedPath = complexPath.replace(/\\/g, '/');
 
-      assert.strictEqual(normalizedPath, 'D:/Projects/ccs-2024/test/.ccs/auth-tokens/provider.json');
+      assert.strictEqual(
+        normalizedPath,
+        'D:/Projects/ccs-2024/test/.ccs/auth-tokens/provider.json'
+      );
       assert(normalizedPath.includes('Projects'), 'Should preserve directory names');
       assert(normalizedPath.includes('auth-tokens'), 'Should preserve hyphens');
       assert(normalizedPath.includes('provider.json'), 'Should preserve filenames');
@@ -348,7 +348,8 @@ auth-dir: "/test"
     });
 
     it('handles tabs in indentation', () => {
-      const configContent = 'api-keys:\n\t- "ccs-internal-managed"\n\t- "user-key-with-tab"\n\nauth-dir: "/test"';
+      const configContent =
+        'api-keys:\n\t- "ccs-internal-managed"\n\t- "user-key-with-tab"\n\nauth-dir: "/test"';
 
       const userKeys = parseUserApiKeys(configContent);
 
@@ -544,12 +545,305 @@ auth-dir: "${cliproxyDir.replace(/\\/g, '/')}/auth"
 
       testPaths.forEach(({ input, expected }) => {
         const normalized = input.replace(/\\/g, '/');
-        assert.strictEqual(
-          normalized,
-          expected,
-          `Should normalize "${input}" to "${expected}"`
-        );
+        assert.strictEqual(normalized, expected, `Should normalize "${input}" to "${expected}"`);
       });
+    });
+  });
+
+  describe('oauth-model-alias fork:true', () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+
+    let testDir;
+    let originalCcsHome;
+    let regenerateConfig;
+
+    beforeEach(() => {
+      testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-test-fork-'));
+      originalCcsHome = process.env.CCS_HOME;
+      process.env.CCS_HOME = testDir;
+
+      delete require.cache[require.resolve('../../../dist/cliproxy/config-generator')];
+      delete require.cache[require.resolve('../../../dist/utils/config-manager')];
+      const configGenerator = require('../../../dist/cliproxy/config-generator');
+      regenerateConfig = configGenerator.regenerateConfig;
+    });
+
+    afterEach(() => {
+      process.env.CCS_HOME = originalCcsHome;
+      if (testDir && fs.existsSync(testDir)) {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      }
+    });
+
+    it('generates fork:true for Claude model aliases', () => {
+      regenerateConfig();
+
+      const cliproxyDir = path.join(testDir, '.ccs', 'cliproxy');
+      const config = fs.readFileSync(path.join(cliproxyDir, 'config.yaml'), 'utf-8');
+
+      // Claude aliases should have fork: true
+      assert(config.includes('claude-sonnet-4-6'), 'Should include Claude Sonnet 4.6 model');
+      assert(config.includes('fork: true'), 'Should include fork: true for Claude aliases');
+      assert(
+        !config.includes('claude-sonnet-4-5'),
+        'Should not include denylisted Claude Sonnet 4.5 aliases'
+      );
+      assert(
+        !config.includes('claude-opus-4-5'),
+        'Should not include denylisted Claude Opus 4.5 aliases'
+      );
+      assert(
+        !config.includes('alias: gemini-claude-'),
+        'Should not emit deprecated gemini-claude aliases'
+      );
+
+      // Verify fork: true appears after each Claude alias entry
+      const lines = config.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes('alias: claude-')) {
+          assert(
+            lines[i + 1] && lines[i + 1].trim() === 'fork: true',
+            `fork: true should follow Claude alias at line ${i}: ${lines[i]}`
+          );
+        }
+      }
+    });
+
+    it('does not generate fork:true for non-Claude aliases', () => {
+      regenerateConfig();
+
+      const cliproxyDir = path.join(testDir, '.ccs', 'cliproxy');
+      const config = fs.readFileSync(path.join(cliproxyDir, 'config.yaml'), 'utf-8');
+
+      // Gemini aliases should NOT have fork: true
+      const lines = config.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes('alias: gemini-3-') || lines[i].includes('alias: gemini-2.5-')) {
+          const nextLine = lines[i + 1] || '';
+          assert(
+            !nextLine.trim().startsWith('fork:'),
+            `Gemini alias should not have fork: ${lines[i]}`
+          );
+        }
+      }
+    });
+
+    it('generates Gemini 3.1 compatibility aliases without fork', () => {
+      regenerateConfig();
+
+      const cliproxyDir = path.join(testDir, '.ccs', 'cliproxy');
+      const config = fs.readFileSync(path.join(cliproxyDir, 'config.yaml'), 'utf-8');
+      const lines = config.split('\n');
+
+      const gemini31AliasLines = [
+        'alias: gemini-3.1-pro-preview',
+        'alias: gemini-3.1-pro-preview-customtools',
+      ];
+
+      for (const aliasLine of gemini31AliasLines) {
+        const lineIndex = lines.findIndex((line) => line.includes(aliasLine));
+        assert(lineIndex >= 0, `Should include ${aliasLine}`);
+        const nextLine = lines[lineIndex + 1] || '';
+        assert(
+          !nextLine.trim().startsWith('fork:'),
+          `Gemini alias should not have fork: ${aliasLine}`
+        );
+      }
+    });
+
+    it('generates dot and hyphen alias forms for preview compatibility', () => {
+      regenerateConfig();
+
+      const cliproxyDir = path.join(testDir, '.ccs', 'cliproxy');
+      const config = fs.readFileSync(path.join(cliproxyDir, 'config.yaml'), 'utf-8');
+
+      assert(
+        config.includes('alias: gemini-3.1-pro-preview'),
+        'Should include dotted version alias'
+      );
+      assert(
+        config.includes('alias: gemini-3-1-pro-preview'),
+        'Should include hyphen version alias'
+      );
+      assert(
+        config.includes('alias: gemini-3-1-pro-preview-customtools'),
+        'Should include hyphen customtools alias'
+      );
+    });
+
+    it('preserves multiple aliases that share the same model name', () => {
+      const cliproxyDir = path.join(testDir, '.ccs', 'cliproxy');
+      fs.mkdirSync(cliproxyDir, { recursive: true });
+
+      const initialConfig = `# CLIProxyAPI config generated by CCS v8
+port: 8317
+api-keys:
+  - "ccs-internal-managed"
+auth-dir: "${cliproxyDir.replace(/\\/g, '/')}/auth"
+oauth-model-alias:
+  antigravity:
+    - name: custom-model
+      alias: custom-alias-a
+    - name: custom-model
+      alias: custom-alias-b
+`;
+      fs.writeFileSync(path.join(cliproxyDir, 'config.yaml'), initialConfig);
+
+      regenerateConfig();
+
+      const newConfig = fs.readFileSync(path.join(cliproxyDir, 'config.yaml'), 'utf-8');
+
+      assert(newConfig.includes('alias: custom-alias-a'), 'Should preserve first alias');
+      assert(newConfig.includes('alias: custom-alias-b'), 'Should preserve second alias');
+      assert.strictEqual(
+        (newConfig.match(/alias: custom-alias-a/g) || []).length,
+        1,
+        'Should keep one entry for first alias'
+      );
+      assert.strictEqual(
+        (newConfig.match(/alias: custom-alias-b/g) || []).length,
+        1,
+        'Should keep one entry for second alias'
+      );
+    });
+
+    it('does not auto-enrich aliases from cached catalog to avoid model list bloat', () => {
+      const cliproxyDir = path.join(testDir, '.ccs', 'cliproxy');
+      const cachePath = path.join(testDir, '.ccs', 'model-catalog-cache.json');
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+
+      regenerateConfig();
+
+      const beforeCacheConfig = fs.readFileSync(path.join(cliproxyDir, 'config.yaml'), 'utf-8');
+      assert(
+        !beforeCacheConfig.includes('alias: gemini-3.11-pro-preview'),
+        'Should not include unseen minor alias before cache enrichment'
+      );
+
+      const cachePayload = {
+        providers: {
+          agy: [{ id: 'gemini-3.11-pro-preview', display_name: 'Gemini 3.11 Pro Preview' }],
+        },
+        fetchedAt: Date.now(),
+      };
+      fs.writeFileSync(cachePath, JSON.stringify(cachePayload));
+
+      regenerateConfig();
+
+      const afterCacheConfig = fs.readFileSync(path.join(cliproxyDir, 'config.yaml'), 'utf-8');
+      assert(
+        !afterCacheConfig.includes('alias: gemini-3.11-pro-preview'),
+        'Should not include cache-derived unseen minor alias'
+      );
+      assert(
+        !afterCacheConfig.includes('alias: gemini-3.11-pro-preview-customtools'),
+        'Should not include compatibility alias for cache-derived entry'
+      );
+      assert(
+        afterCacheConfig.includes('alias: gemini-3-pro-preview'),
+        'Should keep baseline Gemini preview alias generation'
+      );
+      assert(
+        afterCacheConfig.includes('alias: gemini-3-pro-preview-customtools'),
+        'Should keep baseline compatibility alias generation'
+      );
+    });
+
+    it('preserves user-added aliases with fork during regeneration', () => {
+      const cliproxyDir = path.join(testDir, '.ccs', 'cliproxy');
+      fs.mkdirSync(cliproxyDir, { recursive: true });
+
+      const initialConfig = `# CLIProxyAPI config generated by CCS v6
+port: 8317
+api-keys:
+  - "ccs-internal-managed"
+auth-dir: "${cliproxyDir.replace(/\\/g, '/')}/auth"
+oauth-model-alias:
+  antigravity:
+    - name: custom-model
+      alias: my-custom-alias
+      fork: true
+`;
+      fs.writeFileSync(path.join(cliproxyDir, 'config.yaml'), initialConfig);
+
+      regenerateConfig();
+
+      const newConfig = fs.readFileSync(path.join(cliproxyDir, 'config.yaml'), 'utf-8');
+      assert(newConfig.includes('custom-model'), 'Should preserve custom alias name');
+      assert(newConfig.includes('my-custom-alias'), 'Should preserve custom alias');
+
+      // Check fork is preserved for user alias
+      const lines = newConfig.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes('alias: my-custom-alias')) {
+          assert(
+            lines[i + 1] && lines[i + 1].trim() === 'fork: true',
+            'Should preserve fork: true for user-added alias'
+          );
+        }
+      }
+    });
+
+    it('normalizes deprecated gemini-claude aliases during regeneration', () => {
+      const cliproxyDir = path.join(testDir, '.ccs', 'cliproxy');
+      fs.mkdirSync(cliproxyDir, { recursive: true });
+
+      const initialConfig = `# CLIProxyAPI config generated by CCS v9
+port: 8317
+api-keys:
+  - "ccs-internal-managed"
+auth-dir: "${cliproxyDir.replace(/\\/g, '/')}/auth"
+oauth-model-alias:
+  antigravity:
+    - name: claude-sonnet-4-6-thinking
+      alias: gemini-claude-sonnet-4-6-thinking
+      fork: true
+`;
+      fs.writeFileSync(path.join(cliproxyDir, 'config.yaml'), initialConfig);
+
+      regenerateConfig();
+
+      const newConfig = fs.readFileSync(path.join(cliproxyDir, 'config.yaml'), 'utf-8');
+      assert(
+        newConfig.includes('alias: claude-sonnet-4-6'),
+        'Should migrate deprecated sonnet thinking alias to canonical model ID'
+      );
+      assert(
+        !newConfig.includes('alias: gemini-claude-sonnet-4-6-thinking'),
+        'Should remove deprecated gemini-claude alias after regeneration'
+      );
+    });
+
+    it('normalizes dotted deprecated sonnet thinking aliases during regeneration', () => {
+      const cliproxyDir = path.join(testDir, '.ccs', 'cliproxy');
+      fs.mkdirSync(cliproxyDir, { recursive: true });
+
+      const initialConfig = `# CLIProxyAPI config generated by CCS v11
+port: 8317
+api-keys:
+  - "ccs-internal-managed"
+auth-dir: "${cliproxyDir.replace(/\\/g, '/')}/auth"
+oauth-model-alias:
+  antigravity:
+    - name: claude-sonnet-4-6-thinking
+      alias: claude-sonnet-4.6-thinking
+      fork: true
+`;
+      fs.writeFileSync(path.join(cliproxyDir, 'config.yaml'), initialConfig);
+
+      regenerateConfig();
+
+      const newConfig = fs.readFileSync(path.join(cliproxyDir, 'config.yaml'), 'utf-8');
+      assert(
+        newConfig.includes('alias: claude-sonnet-4-6'),
+        'Should migrate dotted deprecated sonnet thinking alias to canonical model ID'
+      );
+      assert(
+        !newConfig.includes('alias: claude-sonnet-4.6-thinking'),
+        'Should remove dotted deprecated sonnet thinking alias after regeneration'
+      );
     });
   });
 });

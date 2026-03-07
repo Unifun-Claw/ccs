@@ -85,6 +85,16 @@ export {
 export type { ModelEntry, ProviderCatalog } from './model-catalog';
 export { MODEL_CATALOG, supportsModelConfig, getProviderCatalog, findModel } from './model-catalog';
 export {
+  MODEL_ENV_VAR_KEYS,
+  extractProviderFromPathname,
+  isAntigravityProvider,
+  normalizeClaudeDottedMajorMinor,
+  normalizeClaudeDottedThinkingMajorMinor,
+  normalizeModelIdForProvider,
+  normalizeModelIdForRouting,
+  normalizeModelEnvVarsForProvider,
+} from './model-id-normalizer';
+export {
   hasUserSettings,
   getCurrentModel,
   configureProviderModel,
@@ -176,8 +186,21 @@ export type {
   ManagementApiErrorCode,
   ClaudeKeyPatch,
   SyncStatus,
+  RemoteModelInfo,
+  RemoteThinkingSupport,
 } from './management-api-types';
 export { ManagementApiClient, createManagementClient } from './management-api-client';
+
+// Catalog cache (model catalog sync with CLIProxyAPI)
+export {
+  getResolvedCatalog,
+  getAllResolvedCatalogs,
+  getCacheAge,
+  clearCatalogCache,
+  setCachedCatalog,
+  SYNCABLE_PROVIDERS,
+  PROVIDER_TO_CHANNEL,
+} from './catalog-cache';
 
 // Sync module (profile sync to remote CLIProxy)
 export type { SyncableProfile, SyncPreviewItem } from './sync';
@@ -205,3 +228,7 @@ export { ToolNameMapper } from './tool-name-mapper';
 
 export type { ToolSanitizationProxyConfig } from './tool-sanitization-proxy';
 export { ToolSanitizationProxy } from './tool-sanitization-proxy';
+
+// Schema sanitization (for MCP input_schema non-standard property removal)
+export type { SchemaSanitizationResult } from './schema-sanitizer';
+export { sanitizeInputSchema, sanitizeToolSchemas } from './schema-sanitizer';

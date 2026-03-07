@@ -3,6 +3,8 @@
  * Types for CLIProxyAPI binary management and execution
  */
 
+import type { CompositeTierConfig } from '../config/unified-config-types';
+
 /**
  * Supported operating systems
  */
@@ -119,6 +121,7 @@ export interface DownloadResult {
  * - kiro: Kiro (AWS CodeWhisperer) via OAuth
  * - ghcp: GitHub Copilot via Device Code (OAuth through CLIProxyAPIPlus)
  * - claude: Claude (Anthropic) via OAuth
+ * - kimi: Kimi (Moonshot AI) via Device Code OAuth
  */
 export type CLIProxyProvider =
   | 'gemini'
@@ -128,7 +131,8 @@ export type CLIProxyProvider =
   | 'iflow'
   | 'kiro'
   | 'ghcp'
-  | 'claude';
+  | 'claude'
+  | 'kimi';
 
 /**
  * CLIProxy backend selection
@@ -181,6 +185,20 @@ export interface ExecutorConfig {
   pollInterval: number;
   /** Custom settings path for user-defined CLIProxy variants */
   customSettingsPath?: string;
+  /** Composite variant: true when mixing providers per tier */
+  isComposite?: boolean;
+  /** Composite variant: per-tier provider+model mappings */
+  compositeTiers?: {
+    opus: CompositeTierConfig;
+    sonnet: CompositeTierConfig;
+    haiku: CompositeTierConfig;
+  };
+  /** Composite variant: which tier is the default */
+  compositeDefaultTier?: 'opus' | 'sonnet' | 'haiku';
+  /** Original profile/variant name (e.g., "my-mix" for composite variants) */
+  profileName?: string;
+  /** Optional inherited continuity directory from mapped account profile */
+  claudeConfigDir?: string;
 }
 
 /**

@@ -100,12 +100,14 @@ describe('ProfileDetector', () => {
       const mockUnifiedConfig = {
         version: 2,
         profiles: {
-          glm: { settings: settingsPath, type: 'api' }
-        }
+          glm: { settings: settingsPath, type: 'api' },
+        },
       };
 
       const isUnifiedModeSpy = spyOn(unifiedConfigLoader, 'isUnifiedMode').mockReturnValue(true);
-      const loadUnifiedConfigSpy = spyOn(unifiedConfigLoader, 'loadUnifiedConfig').mockReturnValue(mockUnifiedConfig as any);
+      const loadUnifiedConfigSpy = spyOn(unifiedConfigLoader, 'loadUnifiedConfig').mockReturnValue(
+        mockUnifiedConfig as any
+      );
 
       try {
         const result = detector.detectProfileType('glm');
@@ -118,16 +120,55 @@ describe('ProfileDetector', () => {
       }
     });
 
+    it('should resolve km to legacy kimi API profile from unified config', () => {
+      const settingsPath = path.join(tempDir, 'kimi.settings.json');
+      fs.writeFileSync(
+        settingsPath,
+        JSON.stringify({ env: { ANTHROPIC_MODEL: 'kimi-k2-thinking-turbo' } })
+      );
+
+      const mockUnifiedConfig = {
+        version: 2,
+        profiles: {
+          kimi: { settings: settingsPath, type: 'api' },
+        },
+      };
+
+      const isUnifiedModeSpy = spyOn(unifiedConfigLoader, 'isUnifiedMode').mockReturnValue(true);
+      const loadUnifiedConfigSpy = spyOn(unifiedConfigLoader, 'loadUnifiedConfig').mockReturnValue(
+        mockUnifiedConfig as any
+      );
+
+      try {
+        const result = detector.detectProfileType('km');
+        expect(result.type).toBe('settings');
+        expect(result.name).toBe('km');
+        expect(result.settingsPath).toBe(settingsPath);
+        expect(result.env).toEqual({ ANTHROPIC_MODEL: 'kimi-k2-thinking-turbo' });
+      } finally {
+        isUnifiedModeSpy.mockRestore();
+        loadUnifiedConfigSpy.mockRestore();
+      }
+    });
+
+    it('should keep ccs kimi mapped to CLIProxy provider', () => {
+      const result = detector.detectProfileType('kimi');
+      expect(result.type).toBe('cliproxy');
+      expect(result.provider).toBe('kimi');
+    });
+
     it('should detect account-based profile from unified config', () => {
       const mockUnifiedConfig = {
         version: 2,
         accounts: {
-          work: { created: '2025-01-01', last_used: '2025-01-02' }
-        }
+          work: { created: '2025-01-01', last_used: '2025-01-02', bare: true },
+        },
       };
 
       const isUnifiedModeSpy = spyOn(unifiedConfigLoader, 'isUnifiedMode').mockReturnValue(true);
-      const loadUnifiedConfigSpy = spyOn(unifiedConfigLoader, 'loadUnifiedConfig').mockReturnValue(mockUnifiedConfig as any);
+      const loadUnifiedConfigSpy = spyOn(unifiedConfigLoader, 'loadUnifiedConfig').mockReturnValue(
+        mockUnifiedConfig as any
+      );
 
       try {
         const result = detector.detectProfileType('work');
@@ -135,6 +176,7 @@ describe('ProfileDetector', () => {
         expect(result.name).toBe('work');
         expect(result.profile).toBeDefined();
         expect((result.profile as any).type).toBe('account');
+        expect((result.profile as any).bare).toBe(true);
       } finally {
         isUnifiedModeSpy.mockRestore();
         loadUnifiedConfigSpy.mockRestore();

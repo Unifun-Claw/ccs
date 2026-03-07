@@ -2,7 +2,7 @@
  * Unit tests for JSONL Parser
  */
 
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, spyOn } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -133,9 +133,61 @@ describe('parseUsageEntry', () => {
     expect(parseUsageEntry('not json at all', '/test')).toBeNull();
   });
 
+  test('strips UTF-8 BOM from line before parsing', () => {
+    // UTF-8 BOM character (\uFEFF) can appear at start of files
+    const bomEntry = '\uFEFF' + VALID_ASSISTANT_ENTRY;
+    const result = parseUsageEntry(bomEntry, '/test');
+
+    expect(result).not.toBeNull();
+    expect(result!.model).toBe('claude-sonnet-4-5');
+    expect(result!.inputTokens).toBe(1000);
+  });
+
   test('includes project path in result', () => {
     const result = parseUsageEntry(VALID_ASSISTANT_ENTRY, '/custom/project/path');
     expect(result!.projectPath).toBe('/custom/project/path');
+  });
+
+  test('parses string target when present', () => {
+    const withTarget = JSON.stringify({
+      ...JSON.parse(VALID_ASSISTANT_ENTRY),
+      target: 'droid',
+    });
+    const result = parseUsageEntry(withTarget, '/test');
+    expect(result).not.toBeNull();
+    expect(result!.target).toBe('droid');
+  });
+
+  test('ignores non-string target values', () => {
+    const withNumericTarget = JSON.stringify({
+      ...JSON.parse(VALID_ASSISTANT_ENTRY),
+      target: 123,
+    });
+    const result = parseUsageEntry(withNumericTarget, '/test');
+    expect(result).not.toBeNull();
+    expect(result!.target).toBeUndefined();
+  });
+
+  test('coerces token fields to non-negative numbers', () => {
+    const withInvalidUsage = JSON.stringify({
+      ...JSON.parse(VALID_ASSISTANT_ENTRY),
+      message: {
+        model: 'claude-sonnet-4-5',
+        usage: {
+          input_tokens: '1500',
+          output_tokens: -10,
+          cache_creation_input_tokens: 'bad',
+          cache_read_input_tokens: null,
+        },
+      },
+    });
+
+    const result = parseUsageEntry(withInvalidUsage, '/test');
+    expect(result).not.toBeNull();
+    expect(result!.inputTokens).toBe(1500);
+    expect(result!.outputTokens).toBe(0);
+    expect(result!.cacheCreationTokens).toBe(0);
+    expect(result!.cacheReadTokens).toBe(0);
   });
 });
 
@@ -187,16 +239,17 @@ describe('parseJsonlFile', () => {
     expect(entries.length).toBe(0);
   });
 
+  test('returns empty array when stream cannot be opened', async () => {
+    const directoryPath = path.join(tempDir, 'not-a-file');
+    fs.mkdirSync(directoryPath);
+
+    const entries = await parseJsonlFile(directoryPath, '/test');
+    expect(entries).toEqual([]);
+  });
+
   test('handles file with blank lines', async () => {
     const filePath = path.join(tempDir, 'blanks.jsonl');
-    const content = [
-      '',
-      VALID_ASSISTANT_ENTRY,
-      '',
-      '   ',
-      ASSISTANT_ENTRY_NO_CACHE,
-      '',
-    ].join('\n');
+    const content = ['', VALID_ASSISTANT_ENTRY, '', '   ', ASSISTANT_ENTRY_NO_CACHE, ''].join('\n');
 
     fs.writeFileSync(filePath, content);
 
@@ -243,6 +296,30 @@ describe('parseProjectDirectory', () => {
   test('returns empty array for non-existent directory', async () => {
     const entries = await parseProjectDirectory('/nonexistent/dir');
     expect(entries.length).toBe(0);
+  });
+
+  test('returns empty array when directory read fails', async () => {
+    const existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(true);
+    const readdirSpy = spyOn(fs.promises, 'readdir').mockRejectedValue(new Error('EACCES'));
+
+    try {
+      const entries = await parseProjectDirectory('/protected/dir');
+      expect(entries).toEqual([]);
+    } finally {
+      existsSyncSpy.mockRestore();
+      readdirSpy.mockRestore();
+    }
+  });
+
+  test('sanitizes derived projectPath from dashed directory names', async () => {
+    const projectDir = path.join(tempDir, '-..-etc-passwd');
+    fs.mkdirSync(projectDir);
+    fs.writeFileSync(path.join(projectDir, 'session.jsonl'), VALID_ASSISTANT_ENTRY);
+
+    const entries = await parseProjectDirectory(projectDir);
+
+    expect(entries.length).toBe(1);
+    expect(entries[0].projectPath).toBe('/etc/passwd');
   });
 });
 
@@ -359,6 +436,33 @@ describe('scanProjectsDirectory', () => {
     expect(entries[0].sessionId).toBe('new');
   });
 
+  test('skips entries with invalid timestamps when minDate filtering is enabled', async () => {
+    const project = path.join(tempDir, '-test-invalid-timestamp');
+    fs.mkdirSync(project);
+
+    const invalidTimestampEntry = JSON.stringify({
+      type: 'assistant',
+      sessionId: 'invalid-time',
+      timestamp: 'not-a-date',
+      message: { model: 'claude-sonnet-4-5', usage: { input_tokens: 100, output_tokens: 50 } },
+    });
+    const validEntry = JSON.stringify({
+      type: 'assistant',
+      sessionId: 'valid-time',
+      timestamp: '2025-12-09T00:00:00.000Z',
+      message: { model: 'claude-sonnet-4-5', usage: { input_tokens: 200, output_tokens: 100 } },
+    });
+    fs.writeFileSync(path.join(project, 'session.jsonl'), [invalidTimestampEntry, validEntry].join('\n'));
+
+    const entries = await scanProjectsDirectory({
+      projectsDir: tempDir,
+      minDate: new Date('2025-01-01'),
+    });
+
+    expect(entries.length).toBe(1);
+    expect(entries[0].sessionId).toBe('valid-time');
+  });
+
   test('returns empty array for empty directory', async () => {
     const entries = await scanProjectsDirectory({ projectsDir: tempDir });
     expect(entries.length).toBe(0);
@@ -379,6 +483,41 @@ describe('scanProjectsDirectory', () => {
     });
 
     expect(entries.length).toBe(5);
+  });
+
+  test('falls back to default concurrency when invalid concurrency is provided', async () => {
+    for (let i = 0; i < 3; i++) {
+      const project = path.join(tempDir, `-invalid-concurrency-${i}`);
+      fs.mkdirSync(project);
+      fs.writeFileSync(path.join(project, 'session.jsonl'), VALID_ASSISTANT_ENTRY);
+    }
+
+    const zeroEntries = await scanProjectsDirectory({
+      projectsDir: tempDir,
+      concurrency: 0,
+    });
+    expect(zeroEntries.length).toBe(3);
+
+    const negativeEntries = await scanProjectsDirectory({
+      projectsDir: tempDir,
+      concurrency: -5,
+    });
+    expect(negativeEntries.length).toBe(3);
+  });
+
+  test('caps very high concurrency values to a safe maximum', async () => {
+    for (let i = 0; i < 4; i++) {
+      const project = path.join(tempDir, `-capped-concurrency-${i}`);
+      fs.mkdirSync(project);
+      fs.writeFileSync(path.join(project, 'session.jsonl'), VALID_ASSISTANT_ENTRY);
+    }
+
+    const entries = await scanProjectsDirectory({
+      projectsDir: tempDir,
+      concurrency: 9999,
+    });
+
+    expect(entries.length).toBe(4);
   });
 });
 

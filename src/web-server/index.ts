@@ -13,6 +13,7 @@ import { WebSocketServer } from 'ws';
 import { setupWebSocket } from './websocket';
 import { createSessionMiddleware, authMiddleware } from './middleware/auth-middleware';
 import { startAutoSyncWatcher, stopAutoSyncWatcher } from '../cliproxy/sync';
+import { shutdownUsageAggregator } from './usage/aggregator';
 
 export interface ServerOptions {
   port: number;
@@ -32,7 +33,11 @@ export interface ServerInstance {
 export async function startServer(options: ServerOptions): Promise<ServerInstance> {
   const app = express();
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ server });
+  const wss = new WebSocketServer({
+    server,
+    maxPayload: 1024 * 1024, // 1MB hard limit to prevent DoS
+    perMessageDeflate: false, // Prevent zip bomb attacks
+  });
 
   // JSON body parsing with error handler for malformed JSON
   app.use(express.json());
@@ -103,6 +108,7 @@ export async function startServer(options: ServerOptions): Promise<ServerInstanc
   const cleanup = () => {
     wsCleanup();
     stopAutoSyncWatcher().catch(() => {});
+    shutdownUsageAggregator();
   };
 
   // Start listening

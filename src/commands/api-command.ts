@@ -8,6 +8,8 @@
  * Business logic delegated to src/api/services/.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   initUI,
   header,
@@ -35,11 +37,21 @@ import {
   isUsingUnifiedConfig,
   isOpenRouterUrl,
   pickOpenRouterModel,
+  PROVIDER_PRESETS,
   getPresetById,
+  getPresetAliases,
   getPresetIds,
+  discoverApiProfileOrphans,
+  registerApiProfileOrphans,
+  copyApiProfile,
+  exportApiProfile,
+  importApiProfileBundle,
   type ModelMapping,
+  type ProviderPreset,
 } from '../api/services';
 import { syncToLocalConfig } from '../cliproxy/sync/local-config-sync';
+import type { TargetType } from '../targets/target-adapter';
+import { extractOption, hasAnyFlag } from './arg-extractor';
 
 interface ApiCommandArgs {
   name?: string;
@@ -47,41 +59,204 @@ interface ApiCommandArgs {
   apiKey?: string;
   model?: string;
   preset?: string;
+  target?: TargetType;
   force?: boolean;
   yes?: boolean;
+  errors: string[];
+}
+
+const API_BOOLEAN_FLAGS = ['--force', '--yes', '-y'] as const;
+const API_VALUE_FLAGS = ['--base-url', '--api-key', '--model', '--preset', '--target'] as const;
+const API_KNOWN_FLAGS: readonly string[] = [...API_BOOLEAN_FLAGS, ...API_VALUE_FLAGS];
+const API_VALUE_FLAG_SET = new Set<string>(API_VALUE_FLAGS);
+
+function sanitizeHelpText(value: string): string {
+  return value
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[\x00-\x1f\x7f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function renderPresetHelpLine(preset: ProviderPreset, idWidth: number): string {
+  const presetId = sanitizeHelpText(preset.id) || 'unknown';
+  const paddedId = presetId.padEnd(idWidth);
+  const presetName = sanitizeHelpText(preset.name) || 'Unknown preset';
+  const presetDescription = sanitizeHelpText(preset.description) || 'No description';
+  return `  ${color(paddedId, 'command')} ${presetName} - ${presetDescription}`;
+}
+
+function applyRepeatedOption(
+  args: string[],
+  flags: readonly string[],
+  onValue: (value: string) => void,
+  onMissing: () => void
+): string[] {
+  let remaining = [...args];
+
+  while (true) {
+    const extracted = extractOption(remaining, flags, {
+      allowDashValue: true,
+      knownFlags: API_KNOWN_FLAGS,
+    });
+    if (!extracted.found) {
+      return remaining;
+    }
+
+    if (extracted.missingValue || !extracted.value) {
+      onMissing();
+    } else {
+      onValue(extracted.value);
+    }
+
+    remaining = extracted.remainingArgs;
+  }
+}
+
+function extractPositionalArgs(args: string[]): string[] {
+  const positionals: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const token = args[i];
+    if (token === '--') {
+      positionals.push(...args.slice(i + 1));
+      break;
+    }
+
+    if (token.startsWith('-')) {
+      if (!token.includes('=') && API_VALUE_FLAG_SET.has(token)) {
+        const next = args[i + 1];
+        if (next && !next.startsWith('-')) {
+          i++;
+        }
+      }
+      continue;
+    }
+
+    positionals.push(token);
+  }
+
+  return positionals;
+}
+
+function parseTargetValue(value: string): TargetType | null {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'claude' || normalized === 'droid') {
+    return normalized;
+  }
+  return null;
+}
+
+function parseOptionalTargetFlag(
+  args: string[],
+  knownFlags: readonly string[]
+): { target?: TargetType; remainingArgs: string[]; errors: string[] } {
+  const extracted = extractOption(args, ['--target'], {
+    allowDashValue: true,
+    knownFlags,
+  });
+  if (!extracted.found) {
+    return { remainingArgs: args, errors: [] };
+  }
+  if (extracted.missingValue || !extracted.value) {
+    return { remainingArgs: extracted.remainingArgs, errors: ['Missing value for --target'] };
+  }
+  const target = parseTargetValue(extracted.value);
+  if (!target) {
+    return {
+      remainingArgs: extracted.remainingArgs,
+      errors: [`Invalid --target value "${extracted.value}". Use: claude or droid`],
+    };
+  }
+  return { target, remainingArgs: extracted.remainingArgs, errors: [] };
 }
 
 /** Parse command line arguments for api commands */
-function parseArgs(args: string[]): ApiCommandArgs {
-  const result: ApiCommandArgs = {};
+export function parseApiCommandArgs(args: string[]): ApiCommandArgs {
+  const result: ApiCommandArgs = {
+    force: hasAnyFlag(args, ['--force']),
+    yes: hasAnyFlag(args, ['--yes', '-y']),
+    errors: [],
+  };
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+  let remaining = [...args];
 
-    if (arg === '--base-url' && args[i + 1]) {
-      result.baseUrl = args[++i];
-    } else if (arg === '--api-key' && args[i + 1]) {
-      result.apiKey = args[++i];
-    } else if (arg === '--model' && args[i + 1]) {
-      result.model = args[++i];
-    } else if (arg === '--preset' && args[i + 1]) {
-      result.preset = args[++i];
-    } else if (arg === '--force') {
-      result.force = true;
-    } else if (arg === '--yes' || arg === '-y') {
-      result.yes = true;
-    } else if (!arg.startsWith('-') && !result.name) {
-      result.name = arg;
+  remaining = applyRepeatedOption(
+    remaining,
+    ['--base-url'],
+    (value) => {
+      result.baseUrl = value;
+    },
+    () => {
+      result.errors.push('Missing value for --base-url');
     }
-  }
+  );
 
+  remaining = applyRepeatedOption(
+    remaining,
+    ['--api-key'],
+    (value) => {
+      result.apiKey = value;
+    },
+    () => {
+      result.errors.push('Missing value for --api-key');
+    }
+  );
+
+  remaining = applyRepeatedOption(
+    remaining,
+    ['--model'],
+    (value) => {
+      result.model = value;
+    },
+    () => {
+      result.errors.push('Missing value for --model');
+    }
+  );
+
+  remaining = applyRepeatedOption(
+    remaining,
+    ['--preset'],
+    (value) => {
+      result.preset = value;
+    },
+    () => {
+      result.errors.push('Missing value for --preset');
+    }
+  );
+
+  remaining = applyRepeatedOption(
+    remaining,
+    ['--target'],
+    (value) => {
+      const target = parseTargetValue(value);
+      if (!target) {
+        result.errors.push(`Invalid --target value "${value}". Use: claude or droid`);
+        return;
+      }
+      result.target = target;
+    },
+    () => {
+      result.errors.push('Missing value for --target');
+    }
+  );
+
+  const positionalArgs = extractPositionalArgs(remaining);
+  result.name = positionalArgs[0];
   return result;
 }
 
 /** Handle 'ccs api create' command */
 async function handleCreate(args: string[]): Promise<void> {
   await initUI();
-  const parsedArgs = parseArgs(args);
+  const parsedArgs = parseApiCommandArgs(args);
+
+  if (parsedArgs.errors.length > 0) {
+    parsedArgs.errors.forEach((errorMessage) => {
+      console.log(fail(errorMessage));
+    });
+    process.exit(1);
+  }
 
   console.log(header('Create API Profile'));
   console.log('');
@@ -92,7 +267,7 @@ async function handleCreate(args: string[]): Promise<void> {
     console.log(fail(`Unknown preset: ${parsedArgs.preset}`));
     console.log('');
     console.log('Available presets:');
-    getPresetIds().forEach((id) => console.log(`  - ${id}`));
+    getPresetIds().forEach((id) => console.log(`  - ${sanitizeHelpText(id)}`));
     process.exit(1);
   }
 
@@ -186,15 +361,16 @@ async function handleCreate(args: string[]): Promise<void> {
   let apiKey = parsedArgs.apiKey;
 
   if (preset?.requiresApiKey === false) {
-    // Preset doesn't require API key (e.g., local Ollama)
+    const presetLabel = preset.name;
+    const optionalApiKey = preset.apiKeyPlaceholder || preset.id;
+
     if (parsedArgs.apiKey) {
-      console.log(dim('Note: Using provided API key for local Ollama (optional)'));
+      console.log(dim(`Note: Using provided API key for ${presetLabel} (optional)`));
       apiKey = parsedArgs.apiKey;
     } else {
-      console.log(info('No API key required for local Ollama'));
-      // Sentinel value 'ollama' matches config/base-ollama.settings.json template
-      // This is not a valid API key, just a placeholder for local-only providers
-      apiKey = 'ollama';
+      console.log(info(`No API key required for ${presetLabel}`));
+      // Local providers still need a truthy auth token persisted in settings.json.
+      apiKey = optionalApiKey;
     }
   } else if (!apiKey) {
     const keyPrompt = preset?.apiKeyHint ? `API Key (${preset.apiKeyHint})` : 'API Key';
@@ -265,12 +441,23 @@ async function handleCreate(args: string[]): Promise<void> {
     sonnet: sonnetModel,
     haiku: haikuModel,
   };
+  let resolvedTarget: TargetType = parsedArgs.target || 'claude';
+
+  if (!parsedArgs.target && !parsedArgs.yes) {
+    const useDroidByDefault = await InteractivePrompt.confirm(
+      'Set default target to Factory Droid for this profile?',
+      { default: false }
+    );
+    if (useDroidByDefault) {
+      resolvedTarget = 'droid';
+    }
+  }
 
   // Create profile
   console.log('');
   console.log(info('Creating API profile...'));
 
-  const result = createApiProfile(name, baseUrl, apiKey, models);
+  const result = createApiProfile(name, baseUrl, apiKey, models, resolvedTarget);
 
   if (!result.success) {
     console.log(fail(`Failed to create API profile: ${result.error}`));
@@ -293,7 +480,8 @@ async function handleCreate(args: string[]): Promise<void> {
     `Config:   ${isUsingUnifiedConfig() ? '~/.ccs/config.yaml' : '~/.ccs/config.json'}\n` +
     `Settings: ${result.settingsFile}\n` +
     `Base URL: ${baseUrl}\n` +
-    `Model:    ${model}`;
+    `Model:    ${model}\n` +
+    `Target:   ${resolvedTarget}`;
 
   if (hasCustomMapping) {
     infoMsg +=
@@ -306,7 +494,24 @@ async function handleCreate(args: string[]): Promise<void> {
   console.log(infoBox(infoMsg, 'API Profile Created'));
   console.log('');
   console.log(header('Usage'));
-  console.log(`  ${color(`ccs ${name} "your prompt"`, 'command')}`);
+  if (resolvedTarget === 'droid') {
+    console.log(
+      `  ${color(`ccs ${name} "your prompt"`, 'command')} ${dim('# uses droid by default')}`
+    );
+    console.log(
+      `  ${color(`ccsd ${name} "your prompt"`, 'command')} ${dim('# explicit droid alias')}`
+    );
+    console.log(
+      `  ${color(`ccs ${name} --target claude "your prompt"`, 'command')} ${dim('# override to Claude')}`
+    );
+  } else {
+    console.log(
+      `  ${color(`ccs ${name} "your prompt"`, 'command')} ${dim('# uses claude by default')}`
+    );
+    console.log(
+      `  ${color(`ccs ${name} --target droid "your prompt"`, 'command')} ${dim('# run on droid for this call')}`
+    );
+  }
   console.log('');
   console.log(header('Edit Settings'));
   console.log(`  ${dim('To modify env vars later:')}`);
@@ -335,13 +540,13 @@ async function handleList(): Promise<void> {
   // Build table data
   const rows: string[][] = profiles.map((p) => {
     const status = p.isConfigured ? color('[OK]', 'success') : color('[!]', 'warning');
-    return [p.name, p.settingsPath, status];
+    return [p.name, p.target, p.settingsPath, status];
   });
 
-  const colWidths = isUsingUnifiedConfig() ? [15, 20, 10] : [15, 35, 10];
+  const colWidths = isUsingUnifiedConfig() ? [15, 10, 20, 10] : [15, 10, 35, 10];
   console.log(
     table(rows, {
-      head: ['API', isUsingUnifiedConfig() ? 'Config' : 'Settings File', 'Status'],
+      head: ['API', 'Target', isUsingUnifiedConfig() ? 'Config' : 'Settings File', 'Status'],
       colWidths,
     })
   );
@@ -350,11 +555,11 @@ async function handleList(): Promise<void> {
   // Show CLIProxy variants if any
   if (variants.length > 0) {
     console.log(subheader('CLIProxy Variants'));
-    const cliproxyRows = variants.map((v) => [v.name, v.provider, v.settings]);
+    const cliproxyRows = variants.map((v) => [v.name, v.provider, v.target, v.settings]);
     console.log(
       table(cliproxyRows, {
-        head: ['Variant', 'Provider', 'Settings'],
-        colWidths: [15, 15, 30],
+        head: ['Variant', 'Provider', 'Target', 'Settings'],
+        colWidths: [15, 12, 10, 28],
       })
     );
     console.log('');
@@ -367,7 +572,14 @@ async function handleList(): Promise<void> {
 /** Handle 'ccs api remove' command */
 async function handleRemove(args: string[]): Promise<void> {
   await initUI();
-  const parsedArgs = parseArgs(args);
+  const parsedArgs = parseApiCommandArgs(args);
+
+  if (parsedArgs.errors.length > 0) {
+    parsedArgs.errors.forEach((errorMessage) => {
+      console.log(fail(errorMessage));
+    });
+    process.exit(1);
+  }
 
   const apis = getApiProfileNames();
 
@@ -431,9 +643,254 @@ async function handleRemove(args: string[]): Promise<void> {
   console.log('');
 }
 
+/** Handle 'ccs api discover' command */
+async function handleDiscover(args: string[]): Promise<void> {
+  await initUI();
+  const register = hasAnyFlag(args, ['--register']);
+  const jsonOutput = hasAnyFlag(args, ['--json']);
+  const force = hasAnyFlag(args, ['--force']);
+
+  const targetParsed = parseOptionalTargetFlag(args, [...API_KNOWN_FLAGS, '--register', '--json']);
+  if (targetParsed.errors.length > 0) {
+    targetParsed.errors.forEach((errorMessage) => console.log(fail(errorMessage)));
+    process.exit(1);
+  }
+
+  const result = discoverApiProfileOrphans();
+  if (jsonOutput) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(header('Discover Orphan API Profiles'));
+  console.log('');
+
+  if (result.orphans.length === 0) {
+    console.log(ok('No orphan settings files found.'));
+    console.log('');
+    return;
+  }
+
+  const rows = result.orphans.map((orphan) => {
+    const status = orphan.validation.valid ? color('[OK]', 'success') : color('[X]', 'error');
+    const issueSummary =
+      orphan.validation.issues.length > 0
+        ? orphan.validation.issues[0].message
+        : 'Ready to register';
+    return [orphan.name, status, issueSummary];
+  });
+
+  console.log(
+    table(rows, {
+      head: ['Profile', 'Status', 'Validation'],
+      colWidths: [20, 10, 64],
+    })
+  );
+  console.log('');
+
+  if (!register) {
+    console.log(info('To register discovered profiles:'));
+    console.log(`  ${color('ccs api discover --register', 'command')}`);
+    console.log('');
+    return;
+  }
+
+  const registration = registerApiProfileOrphans({
+    target: targetParsed.target || 'claude',
+    force,
+  });
+  console.log(ok(`Registered: ${registration.registered.length}`));
+  if (registration.skipped.length > 0) {
+    console.log(warn(`Skipped: ${registration.skipped.length}`));
+    registration.skipped.forEach((item) => {
+      console.log(`  - ${item.name}: ${item.reason}`);
+    });
+  }
+  console.log('');
+}
+
+/** Handle 'ccs api copy' command */
+async function handleCopy(args: string[]): Promise<void> {
+  await initUI();
+  const parsedArgs = parseApiCommandArgs(args);
+  if (parsedArgs.errors.length > 0) {
+    parsedArgs.errors.forEach((errorMessage) => console.log(fail(errorMessage)));
+    process.exit(1);
+  }
+
+  const positionals = extractPositionalArgs(args);
+  const source = positionals[0];
+  let destination = positionals[1];
+
+  if (!source) {
+    console.log(fail('Source profile is required. Usage: ccs api copy <source> <destination>'));
+    process.exit(1);
+  }
+
+  if (!destination) {
+    destination = await InteractivePrompt.input('Destination profile name');
+  }
+
+  if (!parsedArgs.yes) {
+    const confirmed = await InteractivePrompt.confirm(
+      `Copy profile "${source}" to "${destination}"?`,
+      { default: true }
+    );
+    if (!confirmed) {
+      console.log(info('Cancelled'));
+      process.exit(0);
+    }
+  }
+
+  const result = copyApiProfile(source, destination, {
+    target: parsedArgs.target,
+    force: parsedArgs.force,
+  });
+
+  if (!result.success) {
+    console.log(fail(result.error || 'Failed to copy profile'));
+    process.exit(1);
+  }
+
+  console.log(ok(`Profile copied: ${source} -> ${destination}`));
+  if (result.warnings && result.warnings.length > 0) {
+    result.warnings.forEach((warningMessage) => console.log(warn(warningMessage)));
+  }
+  console.log('');
+}
+
+/** Handle 'ccs api export' command */
+async function handleExport(args: string[]): Promise<void> {
+  await initUI();
+  const includeSecrets = hasAnyFlag(args, ['--include-secrets']);
+
+  const outExtracted = extractOption(args, ['--out'], {
+    allowDashValue: true,
+    knownFlags: [...API_KNOWN_FLAGS, '--out', '--include-secrets'],
+  });
+  if (outExtracted.found && (outExtracted.missingValue || !outExtracted.value)) {
+    console.log(fail('Missing value for --out'));
+    process.exit(1);
+  }
+  const outPath = outExtracted.value;
+  const positionals = extractPositionalArgs(outExtracted.remainingArgs);
+  const name = positionals[0];
+
+  if (!name) {
+    console.log(fail('Profile name is required. Usage: ccs api export <name> [--out <file>]'));
+    process.exit(1);
+  }
+
+  const result = exportApiProfile(name, includeSecrets);
+  if (!result.success || !result.bundle) {
+    console.log(fail(result.error || 'Failed to export profile'));
+    process.exit(1);
+  }
+
+  const resolvedOutputPath = path.resolve(outPath || `${name}.ccs-profile.json`);
+  fs.mkdirSync(path.dirname(resolvedOutputPath), { recursive: true });
+  fs.writeFileSync(resolvedOutputPath, JSON.stringify(result.bundle, null, 2) + '\n', 'utf8');
+
+  console.log(ok(`Profile exported to: ${resolvedOutputPath}`));
+  if (result.redacted) {
+    console.log(warn('Token was redacted in export. Use --include-secrets to include it.'));
+  }
+  console.log('');
+}
+
+/** Handle 'ccs api import' command */
+async function handleImport(args: string[]): Promise<void> {
+  await initUI();
+  const force = hasAnyFlag(args, ['--force']);
+  const yes = hasAnyFlag(args, ['--yes', '-y']);
+
+  const nameExtracted = extractOption(args, ['--name'], {
+    allowDashValue: true,
+    knownFlags: [...API_KNOWN_FLAGS, '--name'],
+  });
+  if (nameExtracted.found && (nameExtracted.missingValue || !nameExtracted.value)) {
+    console.log(fail('Missing value for --name'));
+    process.exit(1);
+  }
+
+  const targetParsed = parseOptionalTargetFlag(nameExtracted.remainingArgs, [
+    ...API_KNOWN_FLAGS,
+    '--name',
+  ]);
+  if (targetParsed.errors.length > 0) {
+    targetParsed.errors.forEach((errorMessage) => console.log(fail(errorMessage)));
+    process.exit(1);
+  }
+
+  const positionals = extractPositionalArgs(targetParsed.remainingArgs);
+  const importPath = positionals[0];
+  if (!importPath) {
+    console.log(
+      fail('Import file path is required. Usage: ccs api import <file> [--name <new-name>]')
+    );
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(importPath)) {
+    console.log(fail(`File not found: ${importPath}`));
+    process.exit(1);
+  }
+
+  const raw = fs.readFileSync(importPath, 'utf8');
+  let bundle: unknown;
+  try {
+    bundle = JSON.parse(raw);
+  } catch (error) {
+    console.log(fail(`Invalid JSON file: ${(error as Error).message}`));
+    process.exit(1);
+  }
+
+  if (!yes) {
+    const confirmed = await InteractivePrompt.confirm(
+      `Import profile bundle from "${importPath}"?`,
+      {
+        default: true,
+      }
+    );
+    if (!confirmed) {
+      console.log(info('Cancelled'));
+      process.exit(0);
+    }
+  }
+
+  const result = importApiProfileBundle(bundle, {
+    name: nameExtracted.value,
+    target: targetParsed.target,
+    force,
+  });
+
+  if (!result.success) {
+    console.log(fail(result.error || 'Failed to import profile'));
+    if (result.validation?.issues?.length) {
+      console.log('');
+      result.validation.issues.forEach((issue) => {
+        const indicator = issue.level === 'error' ? color('[X]', 'error') : color('[!]', 'warning');
+        console.log(`${indicator} ${issue.message}`);
+      });
+    }
+    process.exit(1);
+  }
+
+  console.log(ok(`Profile imported: ${result.name}`));
+  if (result.warnings && result.warnings.length > 0) {
+    result.warnings.forEach((warningMessage) => console.log(warn(warningMessage)));
+  }
+  console.log('');
+}
+
 /** Show help for api commands */
 async function showHelp(): Promise<void> {
   await initUI();
+  const presetIds = getPresetIds()
+    .map((id) => sanitizeHelpText(id))
+    .filter(Boolean);
+  const presetAliases = getPresetAliases();
+  const presetIdWidth = Math.max(0, ...presetIds.map((id) => id.length)) + 2;
 
   console.log(header('CCS API Management'));
   console.log('');
@@ -443,37 +900,47 @@ async function showHelp(): Promise<void> {
   console.log(subheader('Commands'));
   console.log(`  ${color('create [name]', 'command')}    Create new API profile (interactive)`);
   console.log(`  ${color('list', 'command')}             List all API profiles`);
+  console.log(
+    `  ${color('discover', 'command')}         Discover orphan *.settings.json and register`
+  );
+  console.log(`  ${color('copy <src> <dest>', 'command')} Duplicate API profile settings + config`);
+  console.log(
+    `  ${color('export <name>', 'command')}    Export profile bundle for cross-device transfer`
+  );
+  console.log(
+    `  ${color('import <file>', 'command')}    Import profile bundle and register profile`
+  );
   console.log(`  ${color('remove <name>', 'command')}    Remove an API profile`);
   console.log('');
   console.log(subheader('Options'));
   console.log(
-    `  ${color('--preset <id>', 'command')}        Use provider preset (openrouter, ollama, ollama-cloud, glm, glmt, kimi, foundry, mm, deepseek, qwen)`
+    `  ${color('--preset <id>', 'command')}        Use provider preset (${presetIds.join(', ')})`
   );
   console.log(`  ${color('--base-url <url>', 'command')}     API base URL (create)`);
   console.log(`  ${color('--api-key <key>', 'command')}      API key (create)`);
   console.log(`  ${color('--model <model>', 'command')}      Default model (create)`);
-  console.log(`  ${color('--force', 'command')}              Overwrite existing (create)`);
+  console.log(
+    `  ${color('--target <cli>', 'command')}       Default target: claude or droid (create)`
+  );
+  console.log(`  ${color('--register', 'command')}           Register discovered orphan settings`);
+  console.log(`  ${color('--json', 'command')}               JSON output for discover command`);
+  console.log(`  ${color('--out <file>', 'command')}         Export bundle output path`);
+  console.log(`  ${color('--include-secrets', 'command')}    Include token in export bundle`);
+  console.log(`  ${color('--name <name>', 'command')}        Override profile name during import`);
+  console.log(
+    `  ${color('--force', 'command')}              Overwrite existing or bypass validation (create/discover/copy/import)`
+  );
   console.log(`  ${color('--yes, -y', 'command')}            Skip confirmation prompts`);
   console.log('');
   console.log(subheader('Provider Presets'));
-  console.log(
-    `  ${color('openrouter', 'command')}    OpenRouter - 349+ models (Claude, GPT, Gemini, Llama)`
-  );
-  console.log(
-    `  ${color('ollama', 'command')}          Ollama - Local open-source models (no API key)`
-  );
-  console.log(
-    `  ${color('ollama-cloud', 'command')}   Ollama Cloud - glm-4.7:cloud, qwen3-coder:480b`
-  );
-  console.log(`  ${color('glm', 'command')}           GLM - Claude via Z.AI`);
-  console.log(`  ${color('glmt', 'command')}          GLMT - GLM with Thinking mode`);
-  console.log(`  ${color('kimi', 'command')}          Kimi - Moonshot AI reasoning model`);
-  console.log(`  ${color('foundry', 'command')}       Azure Foundry - Claude via Microsoft Azure`);
-  console.log(`  ${color('mm', 'command')}            Minimax - M2 series with 1M context`);
-  console.log(`  ${color('deepseek', 'command')}      DeepSeek - V3.2 and R1 reasoning (128K)`);
-  console.log(
-    `  ${color('qwen', 'command')}          Qwen - Alibaba Cloud qwen3-coder-plus (256K)`
-  );
+  PROVIDER_PRESETS.forEach((preset) => console.log(renderPresetHelpLine(preset, presetIdWidth)));
+  Object.entries(presetAliases).forEach(([alias, canonical]) => {
+    const safeAlias = sanitizeHelpText(alias);
+    const safeCanonical = sanitizeHelpText(canonical);
+    console.log(
+      `  ${dim(`Legacy alias: --preset ${safeAlias} (auto-mapped to ${safeCanonical})`)}`
+    );
+  });
   console.log('');
   console.log(subheader('Examples'));
   console.log(`  ${dim('# Interactive wizard')}`);
@@ -481,13 +948,27 @@ async function showHelp(): Promise<void> {
   console.log('');
   console.log(`  ${dim('# Quick setup with preset')}`);
   console.log(`  ${color('ccs api create --preset openrouter', 'command')}`);
+  console.log(`  ${color('ccs api create --preset alibaba-coding-plan', 'command')}`);
+  console.log(`  ${color('ccs api create --preset alibaba', 'command')} ${dim('# alias')}`);
   console.log(`  ${color('ccs api create --preset glm', 'command')}`);
   console.log('');
   console.log(`  ${dim('# Create with name')}`);
   console.log(`  ${color('ccs api create myapi', 'command')}`);
+  console.log(`  ${color('ccs api create mydroid --preset glm --target droid', 'command')}`);
   console.log('');
   console.log(`  ${dim('# Remove API profile')}`);
   console.log(`  ${color('ccs api remove myapi', 'command')}`);
+  console.log('');
+  console.log(`  ${dim('# Discover and register orphan settings files')}`);
+  console.log(`  ${color('ccs api discover', 'command')}`);
+  console.log(`  ${color('ccs api discover --register', 'command')}`);
+  console.log('');
+  console.log(`  ${dim('# Duplicate an existing API profile')}`);
+  console.log(`  ${color('ccs api copy glm glm-backup', 'command')}`);
+  console.log('');
+  console.log(`  ${dim('# Export and import across devices')}`);
+  console.log(`  ${color('ccs api export glm --out ./glm.ccs-profile.json', 'command')}`);
+  console.log(`  ${color('ccs api import ./glm.ccs-profile.json', 'command')}`);
   console.log('');
   console.log(`  ${dim('# Show all API profiles')}`);
   console.log(`  ${color('ccs api list', 'command')}`);
@@ -509,6 +990,18 @@ export async function handleApiCommand(args: string[]): Promise<void> {
       break;
     case 'list':
       await handleList();
+      break;
+    case 'discover':
+      await handleDiscover(args.slice(1));
+      break;
+    case 'copy':
+      await handleCopy(args.slice(1));
+      break;
+    case 'export':
+      await handleExport(args.slice(1));
+      break;
+    case 'import':
+      await handleImport(args.slice(1));
       break;
     case 'remove':
     case 'delete':

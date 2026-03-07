@@ -14,6 +14,8 @@
 
 import { CLIProxyProvider } from './types';
 import { QuotaResult, fetchAccountQuota } from './quota-fetcher';
+import { fetchClaudeQuota } from './quota-fetcher-claude';
+import type { ClaudeQuotaResult } from './quota-types';
 import {
   getDefaultAccount,
   getProviderAccounts,
@@ -23,13 +25,23 @@ import {
   type AccountInfo,
 } from './account-manager';
 import { loadOrCreateUnifiedConfig } from '../config/unified-config-loader';
+import type { RuntimeMonitorConfig } from '../config/unified-config-types';
+
+type ManagedQuotaProvider = 'agy' | 'claude';
+type ManagedQuotaResult = QuotaResult | ClaudeQuotaResult;
+
+const MANAGED_QUOTA_PROVIDERS: readonly ManagedQuotaProvider[] = ['agy', 'claude'];
+
+function isManagedQuotaProvider(provider: CLIProxyProvider): provider is ManagedQuotaProvider {
+  return MANAGED_QUOTA_PROVIDERS.includes(provider as ManagedQuotaProvider);
+}
 
 // ============================================================================
 // QUOTA CACHE (30-second TTL)
 // ============================================================================
 
 interface CacheEntry {
-  result: QuotaResult;
+  result: ManagedQuotaResult;
   timestamp: number;
 }
 
@@ -37,7 +49,7 @@ const CACHE_TTL_MS = 30_000; // 30 seconds
 const quotaCache = new Map<string, CacheEntry>();
 
 // Request deduplication: track in-flight fetch promises to avoid parallel duplicate requests
-const pendingFetches = new Map<string, Promise<QuotaResult>>();
+const pendingFetches = new Map<string, Promise<ManagedQuotaResult>>();
 
 function getCacheKey(provider: CLIProxyProvider, accountId: string): string {
   return `${provider}:${accountId}`;
@@ -46,7 +58,10 @@ function getCacheKey(provider: CLIProxyProvider, accountId: string): string {
 /**
  * Get cached quota result if still valid
  */
-export function getCachedQuota(provider: CLIProxyProvider, accountId: string): QuotaResult | null {
+export function getCachedQuota(
+  provider: CLIProxyProvider,
+  accountId: string
+): ManagedQuotaResult | null {
   const key = getCacheKey(provider, accountId);
   const entry = quotaCache.get(key);
 
@@ -66,7 +81,7 @@ export function getCachedQuota(provider: CLIProxyProvider, accountId: string): Q
 export function setCachedQuota(
   provider: CLIProxyProvider,
   accountId: string,
-  result: QuotaResult
+  result: ManagedQuotaResult
 ): void {
   const key = getCacheKey(provider, accountId);
   quotaCache.set(key, { result, timestamp: Date.now() });
@@ -84,10 +99,10 @@ export function clearQuotaCache(): void {
  * If a fetch for this account is already in progress, return the existing promise
  */
 async function fetchQuotaWithDedup(
-  provider: CLIProxyProvider,
+  provider: ManagedQuotaProvider,
   accountId: string,
   verbose = false
-): Promise<QuotaResult> {
+): Promise<ManagedQuotaResult> {
   const key = getCacheKey(provider, accountId);
 
   // Check if fetch already in progress
@@ -97,12 +112,22 @@ async function fetchQuotaWithDedup(
   }
 
   // Start new fetch and track it
-  const fetchPromise = fetchAccountQuota(provider, accountId, verbose)
+  const fetchPromise = fetchManagedQuota(provider, accountId, verbose)
     .then((result) => {
       setCachedQuota(provider, accountId, result);
       return result;
     })
-    .catch((): QuotaResult => {
+    .catch((): ManagedQuotaResult => {
+      if (provider === 'claude') {
+        return {
+          success: false,
+          windows: [],
+          coreUsage: { fiveHour: null, weekly: null },
+          lastUpdated: Date.now(),
+          error: 'Failed to fetch Claude quota',
+          accountId,
+        };
+      }
       return { success: false, models: [], lastUpdated: Date.now() };
     })
     .finally(() => {
@@ -111,6 +136,17 @@ async function fetchQuotaWithDedup(
 
   pendingFetches.set(key, fetchPromise);
   return fetchPromise;
+}
+
+async function fetchManagedQuota(
+  provider: ManagedQuotaProvider,
+  accountId: string,
+  verbose: boolean
+): Promise<ManagedQuotaResult> {
+  if (provider === 'claude') {
+    return fetchClaudeQuota(accountId, verbose);
+  }
+  return fetchAccountQuota(provider, accountId, verbose);
 }
 
 // ============================================================================
@@ -165,6 +201,30 @@ export function clearCooldown(provider: CLIProxyProvider, accountId: string): vo
 // ============================================================================
 
 /**
+ * Process items with limited concurrency to prevent connection burst
+ * @param items - Items to process
+ * @param fn - Async function to apply to each item
+ * @param concurrency - Number of concurrent operations (default: 10)
+ */
+async function batchedMap<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency = 10,
+  delayMs = 100
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    if (i > 0 && delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
+/**
  * Result of pre-flight quota check
  */
 export interface PreflightResult {
@@ -180,15 +240,38 @@ export interface PreflightResult {
   quotaPercent?: number | null;
 }
 
-/**
- * Calculate average quota percentage from models
- */
-function calculateAverageQuota(quota: QuotaResult): number | null {
-  if (!quota.success || quota.models.length === 0) {
-    return null; // No data available
-  }
-  const total = quota.models.reduce((sum, m) => sum + m.percentage, 0);
+function calculateAgyQuotaPercent(quota: QuotaResult): number | null {
+  if (!quota.success || quota.models.length === 0) return null;
+  const total = quota.models.reduce((sum, model) => sum + model.percentage, 0);
   return total / quota.models.length;
+}
+
+function calculateClaudeQuotaPercent(quota: ClaudeQuotaResult): number | null {
+  if (!quota.success) return null;
+
+  const coreWindows = [quota.coreUsage?.fiveHour, quota.coreUsage?.weekly].filter(
+    (window): window is NonNullable<typeof window> => !!window
+  );
+  if (coreWindows.length > 0) {
+    return Math.min(...coreWindows.map((window) => window.remainingPercent));
+  }
+
+  const usageWindows = quota.windows.filter((window) => window.rateLimitType !== 'overage');
+  if (usageWindows.length > 0) {
+    return Math.min(...usageWindows.map((window) => window.remainingPercent));
+  }
+
+  return null;
+}
+
+/**
+ * Calculate normalized quota percentage for managed providers.
+ */
+function calculateQuotaPercent(quota: ManagedQuotaResult): number | null {
+  if ('models' in quota) {
+    return calculateAgyQuotaPercent(quota);
+  }
+  return calculateClaudeQuotaPercent(quota);
 }
 
 /**
@@ -198,7 +281,11 @@ function calculateAverageQuota(quota: QuotaResult): number | null {
 export async function findHealthyAccount(
   provider: CLIProxyProvider,
   exclude: string[]
-): Promise<{ id: string; tier: string; lastQuota: number } | null> {
+): Promise<{ id: string; tier: string; lastQuota: number | null } | null> {
+  if (!isManagedQuotaProvider(provider)) {
+    return null;
+  }
+
   const config = loadOrCreateUnifiedConfig();
   const tierPriority = config.quota_management?.auto?.tier_priority ?? ['ultra', 'pro', 'free'];
   const threshold = config.quota_management?.auto?.exhaustion_threshold ?? 5;
@@ -213,47 +300,51 @@ export async function findHealthyAccount(
 
   if (available.length === 0) return null;
 
-  // Fetch quota for each available account (with caching and deduplication)
-  const withQuotas = await Promise.all(
-    available.map(async (account) => {
+  // Fetch quota for each available account (batched to prevent connection burst)
+  const withQuotas = await batchedMap(
+    available,
+    async (account) => {
       let quota = getCachedQuota(provider, account.id);
       if (!quota) {
         quota = await fetchQuotaWithDedup(provider, account.id);
       }
 
-      const avgQuota = calculateAverageQuota(quota) ?? 0;
+      const avgQuota = calculateQuotaPercent(quota);
 
       return {
         id: account.id,
         tier: account.tier || 'unknown',
         lastQuota: avgQuota,
       };
-    })
+    },
+    10
   );
 
-  // Filter by threshold
-  const healthy = withQuotas.filter((a) => a.lastQuota >= threshold);
-  if (healthy.length === 0) return null;
+  // Prefer accounts with known healthy quota. If all remaining accounts have unavailable
+  // quota data, fall back to those unknown-but-usable accounts instead of treating them as 0%.
+  const healthy = withQuotas.filter((a) => a.lastQuota !== null && a.lastQuota >= threshold);
+  const selectable = healthy.length > 0 ? healthy : withQuotas.filter((a) => a.lastQuota === null);
+  if (selectable.length === 0) return null;
 
   // Sort by tier priority then quota descending
-  healthy.sort((a, b) => {
+  selectable.sort((a, b) => {
     const tierA = tierPriority.indexOf(a.tier);
     const tierB = tierPriority.indexOf(b.tier);
     const tierOrderA = tierA === -1 ? 999 : tierA;
     const tierOrderB = tierB === -1 ? 999 : tierB;
 
     if (tierOrderA !== tierOrderB) return tierOrderA - tierOrderB;
-    return b.lastQuota - a.lastQuota;
+    return (b.lastQuota ?? -1) - (a.lastQuota ?? -1);
   });
 
-  return healthy[0];
+  return selectable[0];
 }
 
 /**
  * Find and switch to a healthy account
  */
 async function findAndSwitch(
-  provider: CLIProxyProvider,
+  provider: ManagedQuotaProvider,
   excludeAccountId: string,
   reason: string
 ): Promise<PreflightResult> {
@@ -287,12 +378,12 @@ async function findAndSwitch(
  * Checks if default account has sufficient quota, auto-switches if needed.
  * Respects paused accounts, tier priority, and cooldown settings.
  *
- * @param provider - CLIProxy provider (only 'agy' supports quota)
+ * @param provider - CLIProxy provider
  * @returns PreflightResult with account to use and any switch info
  */
 export async function preflightCheck(provider: CLIProxyProvider): Promise<PreflightResult> {
-  // Only Antigravity supports quota checking
-  if (provider !== 'agy') {
+  // Only providers with quota-based account rotation need preflight checks.
+  if (!isManagedQuotaProvider(provider)) {
     const defaultAccount = getDefaultAccount(provider);
     return { proceed: true, accountId: defaultAccount?.id || '' };
   }
@@ -336,8 +427,18 @@ export async function preflightCheck(provider: CLIProxyProvider): Promise<Prefli
     quota = await fetchQuotaWithDedup(provider, defaultAccount.id);
   }
 
-  // Calculate average quota
-  const avgQuota = calculateAverageQuota(quota) ?? 0;
+  // Calculate normalized quota percentage.
+  // Null means quota data is unavailable (e.g. provider does not expose limits for this account).
+  const quotaPercent = calculateQuotaPercent(quota);
+  if (quotaPercent === null) {
+    return {
+      proceed: true,
+      accountId: defaultAccount.id,
+      reason: 'Quota unavailable, using default account',
+    };
+  }
+
+  const avgQuota = quotaPercent;
   const threshold = quotaConfig.auto?.exhaustion_threshold ?? 5;
 
   if (avgQuota < threshold) {
@@ -353,7 +454,7 @@ export async function preflightCheck(provider: CLIProxyProvider): Promise<Prefli
   return {
     proceed: true,
     accountId: defaultAccount.id,
-    quotaPercent: calculateAverageQuota(quota),
+    quotaPercent,
   };
 }
 
@@ -376,11 +477,11 @@ export async function getQuotaStatus(provider: CLIProxyProvider): Promise<{
   const results = await Promise.all(
     accounts.map(async (account) => {
       let quota = getCachedQuota(provider, account.id);
-      if (!quota && provider === 'agy') {
+      if (!quota && isManagedQuotaProvider(provider)) {
         quota = await fetchQuotaWithDedup(provider, account.id);
       }
 
-      const avgQuota = quota ? calculateAverageQuota(quota) : null;
+      const avgQuota = quota ? calculateQuotaPercent(quota) : null;
 
       return {
         account,
@@ -393,4 +494,149 @@ export async function getQuotaStatus(provider: CLIProxyProvider): Promise<{
   );
 
   return { accounts: results };
+}
+
+// ============================================================================
+// RUNTIME QUOTA MONITOR (adaptive polling during active sessions)
+// ============================================================================
+
+/** Active monitor timer (null = not running) */
+let monitorTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Tracks if warning was shown this session (avoid spam) */
+let hasWarnedThisSession = false;
+
+/** Guards against in-flight poll callbacks running after stop */
+let monitorStopped = false;
+
+/**
+ * Schedule next quota poll with adaptive interval.
+ * Uses setTimeout chain (not setInterval) for dynamic interval switching.
+ */
+function scheduleNextPoll(
+  provider: ManagedQuotaProvider,
+  accountId: string,
+  monitorConfig: RuntimeMonitorConfig,
+  intervalMs: number
+): void {
+  monitorTimer = setTimeout(async () => {
+    // Guard: skip if monitor was stopped while this callback was queued
+    if (monitorStopped) return;
+
+    try {
+      const quota = await fetchQuotaWithDedup(provider, accountId);
+      if (monitorStopped) return; // Re-check after async fetch
+      const avgQuota = calculateQuotaPercent(quota);
+
+      if (avgQuota === null) {
+        // Quota data unavailable: keep polling, but do not treat unknown as healthy/exhausted.
+        scheduleNextPoll(
+          provider,
+          accountId,
+          monitorConfig,
+          monitorConfig.normal_interval_seconds * 1000
+        );
+        return;
+      }
+
+      if (avgQuota <= monitorConfig.exhaustion_threshold) {
+        // EXHAUSTED: cooldown + switch default + stop monitoring.
+        // NOTE: Monitor stops here intentionally. The current session continues
+        // on the exhausted account (can't hot-swap mid-session). The switched
+        // default only takes effect on next session start via preflightCheck().
+        const { handleQuotaExhaustion } = await import('./account-safety');
+        await handleQuotaExhaustion(provider, accountId, monitorConfig.cooldown_minutes);
+        monitorTimer = null;
+        return; // Stop polling
+      }
+
+      if (avgQuota <= monitorConfig.warn_threshold) {
+        // WARNING: switch to critical interval, warn once
+        if (!hasWarnedThisSession) {
+          const { writeQuotaWarning } = await import('./account-safety');
+          writeQuotaWarning(accountId, avgQuota);
+          hasWarnedThisSession = true;
+        }
+        scheduleNextPoll(
+          provider,
+          accountId,
+          monitorConfig,
+          monitorConfig.critical_interval_seconds * 1000
+        );
+        return;
+      }
+
+      // HEALTHY: keep normal interval
+      scheduleNextPoll(
+        provider,
+        accountId,
+        monitorConfig,
+        monitorConfig.normal_interval_seconds * 1000
+      );
+    } catch {
+      // API failure: silently reschedule at same interval
+      scheduleNextPoll(provider, accountId, monitorConfig, intervalMs);
+    }
+  }, intervalMs);
+
+  // Prevent monitor from keeping Node.js process alive
+  if (monitorTimer && typeof monitorTimer === 'object' && 'unref' in monitorTimer) {
+    monitorTimer.unref();
+  }
+}
+
+/**
+ * Start adaptive quota monitor for an active session.
+ * Polls at normal_interval (300s) when healthy, switches to
+ * critical_interval (60s) when quota hits warn_threshold (20%).
+ * Auto-stops on exhaustion or when stopQuotaMonitor() is called.
+ *
+ * Only monitors providers with quota-based account rotation.
+ * No-op for other providers, manual mode, or if disabled in config.
+ */
+export function startQuotaMonitor(provider: CLIProxyProvider, accountId: string): void {
+  // Only managed providers support runtime quota monitoring.
+  if (!isManagedQuotaProvider(provider)) return;
+
+  // Prevent duplicate monitors
+  if (monitorTimer) return;
+
+  const config = loadOrCreateUnifiedConfig();
+  const quotaConfig = config.quota_management;
+
+  // Skip if config missing (shouldn't happen with defaults)
+  if (!quotaConfig) return;
+
+  // Skip if manual mode or runtime monitor disabled
+  if (quotaConfig.mode === 'manual') return;
+  if (!quotaConfig.runtime_monitor?.enabled) return;
+
+  // Validate thresholds: warn must be > exhaustion to avoid immediate exhaustion on warning
+  const monitorConfig = quotaConfig.runtime_monitor;
+  if (monitorConfig.warn_threshold <= monitorConfig.exhaustion_threshold) {
+    return; // Invalid config — skip monitoring silently (logged at config level)
+  }
+
+  hasWarnedThisSession = false;
+  monitorStopped = false;
+
+  // Start first poll at normal interval
+  scheduleNextPoll(
+    provider,
+    accountId,
+    quotaConfig.runtime_monitor,
+    quotaConfig.runtime_monitor.normal_interval_seconds * 1000
+  );
+}
+
+/**
+ * Stop the runtime quota monitor. Safe to call multiple times.
+ */
+export function stopQuotaMonitor(): void {
+  monitorStopped = true;
+  if (monitorTimer) {
+    clearTimeout(monitorTimer);
+    monitorTimer = null;
+  }
+  hasWarnedThisSession = false;
 }

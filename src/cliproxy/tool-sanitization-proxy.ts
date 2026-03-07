@@ -3,8 +3,9 @@
  *
  * HTTP proxy that intercepts Claude CLI → CLIProxy requests to:
  * 1. Sanitize MCP tool names exceeding Gemini's 64-char limit
- * 2. Forward sanitized requests to upstream
- * 3. Restore original names in responses
+ * 2. Sanitize MCP tool input_schema to remove non-standard JSON Schema properties
+ * 3. Forward sanitized requests to upstream
+ * 4. Restore original names in responses
  *
  * Follows CodexReasoningProxy pattern for consistency.
  */
@@ -16,6 +17,14 @@ import * as path from 'path';
 import * as os from 'os';
 import { URL } from 'url';
 import { ToolNameMapper, type Tool, type ContentBlock } from './tool-name-mapper';
+import { sanitizeToolSchemas } from './schema-sanitizer';
+import {
+  extractProviderFromPathname,
+  getDeniedModelIdReasonForProvider,
+  normalizeModelIdForRouting,
+  stripCodexEffortSuffix,
+} from './model-id-normalizer';
+import { getModelMaxLevel } from './model-catalog';
 import { getCcsDir } from '../utils/config-manager';
 
 export interface ToolSanitizationProxyConfig {
@@ -35,6 +44,107 @@ export interface ToolSanitizationProxyConfig {
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const GEMINI_UNSUPPORTED_TOOL_FIELDS = new Set([
+  'strict',
+  'input_examples',
+  'type',
+  'cache_control',
+  'defer_loading',
+]);
+
+const CODEX_UNSUPPORTED_TOOL_FIELDS = new Set(['cache_control']);
+const EXTENDED_CONTEXT_SUFFIX_REGEX = /\[1m\]$/i;
+const LEGACY_CODEX_MODEL_ID_REGEX = /^gpt-5(?:\.\d+)?-codex(?:-(?:mini|max))?$/i;
+
+function canonicalizeCodexModelId(model: string | undefined): string | null {
+  const normalizedModel = model?.trim().toLowerCase();
+  if (!normalizedModel) {
+    return null;
+  }
+
+  const withoutExtendedContext = normalizedModel.replace(EXTENDED_CONTEXT_SUFFIX_REGEX, '').trim();
+  return stripCodexEffortSuffix(withoutExtendedContext);
+}
+
+function isKnownCodexModelId(model: string | undefined): boolean {
+  const normalizedModel = canonicalizeCodexModelId(model);
+  if (!normalizedModel) {
+    return false;
+  }
+
+  // Root-routed requests can carry Codex model IDs that CCS uses outside the
+  // small interactive catalog (for example image analysis and Cursor defaults).
+  return (
+    LEGACY_CODEX_MODEL_ID_REGEX.test(normalizedModel) ||
+    getModelMaxLevel('codex', normalizedModel) !== undefined
+  );
+}
+
+function getUnsupportedToolFields(
+  providerFromPath: string | null,
+  model: string | undefined
+): ReadonlySet<string> | null {
+  const normalizedProvider = providerFromPath?.trim().toLowerCase() ?? null;
+  const normalizedModel = model?.trim().toLowerCase();
+
+  if (
+    normalizedProvider === 'gemini' ||
+    normalizedProvider === 'gemini-cli' ||
+    (normalizedProvider === null && normalizedModel?.startsWith('gemini-'))
+  ) {
+    return GEMINI_UNSUPPORTED_TOOL_FIELDS;
+  }
+
+  if (
+    normalizedProvider === 'codex' ||
+    (normalizedProvider === null && isKnownCodexModelId(model))
+  ) {
+    return CODEX_UNSUPPORTED_TOOL_FIELDS;
+  }
+
+  return null;
+}
+
+function stripUnsupportedToolFields(
+  tools: Tool[],
+  unsupportedFields: ReadonlySet<string>
+): {
+  tools: Tool[];
+  removedByTool: Array<{ name: string; removed: string[] }>;
+  totalRemoved: number;
+} {
+  const removedByTool: Array<{ name: string; removed: string[] }> = [];
+  let totalRemoved = 0;
+
+  const sanitizedTools = tools.map((tool) => {
+    const sanitizedTool = { ...tool };
+    const removed: string[] = [];
+
+    for (const field of unsupportedFields) {
+      if (field in sanitizedTool) {
+        delete sanitizedTool[field];
+        removed.push(field);
+      }
+    }
+
+    if (removed.length > 0) {
+      removedByTool.push({
+        name: tool.name,
+        removed,
+      });
+      totalRemoved += removed.length;
+    }
+
+    return sanitizedTool;
+  });
+
+  return {
+    tools: sanitizedTools,
+    removedByTool,
+    totalRemoved,
+  };
 }
 
 export class ToolSanitizationProxy {
@@ -177,6 +287,7 @@ export class ToolSanitizationProxy {
     const requestPath = req.url || '/';
     const upstreamBase = new URL(this.config.upstreamBaseUrl);
     const fullUpstreamUrl = new URL(requestPath, upstreamBase);
+    const providerFromPath = extractProviderFromPathname(fullUpstreamUrl.pathname);
 
     this.log(`${method} ${requestPath} → ${fullUpstreamUrl.href}`);
 
@@ -204,11 +315,74 @@ export class ToolSanitizationProxy {
       // Create mapper for this request
       const mapper = new ToolNameMapper();
 
-      // Sanitize tools if present
+      // Normalize dotted Claude model IDs for provider-compatible routing.
       let modifiedBody = parsed;
-      if (isRecord(parsed) && Array.isArray(parsed.tools)) {
-        const sanitizedTools = mapper.registerTools(parsed.tools as Tool[]);
-        modifiedBody = { ...parsed, tools: sanitizedTools };
+      if (isRecord(modifiedBody) && typeof modifiedBody.model === 'string') {
+        const deniedReason = getDeniedModelIdReasonForProvider(
+          modifiedBody.model,
+          providerFromPath
+        );
+        if (deniedReason) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: deniedReason }));
+          return;
+        }
+        const normalizedModel = normalizeModelIdForRouting(modifiedBody.model, providerFromPath);
+        if (normalizedModel !== modifiedBody.model) {
+          this.writeLog(
+            'warn',
+            `[tool-sanitization-proxy] Model normalized for provider routing (${providerFromPath ?? 'root'}): "${modifiedBody.model}" → "${normalizedModel}"`
+          );
+          modifiedBody = { ...modifiedBody, model: normalizedModel };
+        }
+      }
+
+      // Sanitize tools if present
+      if (isRecord(modifiedBody) && Array.isArray(modifiedBody.tools)) {
+        // Step 1: Sanitize input_schema properties (remove non-standard JSON Schema properties)
+        const schemaResult = sanitizeToolSchemas(
+          modifiedBody.tools as Array<{ name: string; input_schema?: Record<string, unknown> }>
+        );
+
+        if (schemaResult.totalRemoved > 0) {
+          for (const entry of schemaResult.removedByTool) {
+            this.writeLog(
+              'warn',
+              `[tool-sanitization-proxy] Schema sanitized for "${entry.name}": removed ${entry.removed.length} Gemini-unsupported properties`
+            );
+          }
+          this.log(
+            `Sanitized ${schemaResult.totalRemoved} schema properties across ${schemaResult.removedByTool.length} tool(s)`
+          );
+        }
+
+        let rewrittenTools = schemaResult.tools as Tool[];
+        const unsupportedToolFields =
+          isRecord(modifiedBody) && typeof modifiedBody.model === 'string'
+            ? getUnsupportedToolFields(providerFromPath, modifiedBody.model)
+            : getUnsupportedToolFields(providerFromPath, undefined);
+
+        if (unsupportedToolFields) {
+          const fieldResult = stripUnsupportedToolFields(rewrittenTools, unsupportedToolFields);
+
+          if (fieldResult.totalRemoved > 0) {
+            for (const entry of fieldResult.removedByTool) {
+              this.writeLog(
+                'warn',
+                `[tool-sanitization-proxy] Tool fields stripped for "${entry.name}" (${providerFromPath ?? 'model-routed'}): ${entry.removed.join(', ')}`
+              );
+            }
+            this.log(
+              `Stripped ${fieldResult.totalRemoved} unsupported top-level tool field(s) across ${fieldResult.removedByTool.length} tool(s)`
+            );
+          }
+
+          rewrittenTools = fieldResult.tools;
+        }
+
+        // Step 2: Sanitize tool names (truncate to 64 chars for Gemini)
+        const sanitizedTools = mapper.registerTools(rewrittenTools);
+        modifiedBody = { ...modifiedBody, tools: sanitizedTools };
 
         // Log sanitization warnings
         if (mapper.hasChanges()) {
@@ -232,7 +406,7 @@ export class ToolSanitizationProxy {
       }
 
       // Check if streaming is requested
-      const isStreaming = isRecord(parsed) && parsed.stream === true;
+      const isStreaming = isRecord(modifiedBody) && modifiedBody.stream === true;
 
       if (isStreaming) {
         await this.forwardJsonStreaming(req, res, fullUpstreamUrl, modifiedBody, mapper);
@@ -419,10 +593,61 @@ export class ToolSanitizationProxy {
         (upstreamRes) => {
           clientRes.writeHead(upstreamRes.statusCode || 200, upstreamRes.headers);
 
-          // If no changes were made, just pipe through
+          // Track upstream SSE lifecycle events (guards against empty proxy responses)
+          const lifecycle = {
+            hasContent: false,
+            hasData: false,
+            hasMessageStart: false,
+            hasMessageDelta: false,
+            hasMessageStop: false,
+            /** Scan text for SSE lifecycle events and update tracking flags */
+            update(text: string) {
+              if (text.includes('"content_block_start"')) this.hasContent = true;
+              if (text.includes('"message_start"')) this.hasMessageStart = true;
+              if (text.includes('"message_delta"')) this.hasMessageDelta = true;
+              if (text.includes('"message_stop"')) this.hasMessageStop = true;
+            },
+          };
+          const isSuccessResponse =
+            (upstreamRes.statusCode || 200) >= 200 && (upstreamRes.statusCode || 200) < 300;
+
+          // If no changes were made, intercept to detect empty responses.
+          // In the real failure case (issue #350), upstream sends message_start but
+          // NOT message_delta/message_stop, so the synthetic response completes the
+          // stream. If upstream DID send message_stop, Claude Code treats the second
+          // synthetic block as additional content in the same conversation turn.
           if (!mapper.hasChanges()) {
-            upstreamRes.pipe(clientRes);
-            upstreamRes.on('end', () => resolve());
+            upstreamRes.on('data', (chunk: Buffer) => {
+              lifecycle.hasData = true;
+              lifecycle.update(chunk.toString('utf8'));
+              // Respect backpressure: pause upstream if client can't keep up
+              const canContinue = clientRes.write(chunk);
+              if (!canContinue) {
+                upstreamRes.pause();
+                clientRes.once('drain', () => upstreamRes.resume());
+              }
+            });
+            upstreamRes.on('end', () => {
+              try {
+                if (!lifecycle.hasContent && isSuccessResponse && lifecycle.hasData) {
+                  this.writeLog(
+                    'warn',
+                    '[tool-sanitization-proxy] Empty response detected from upstream (no content blocks). Injecting synthetic response to prevent client crash.'
+                  );
+                  clientRes.write(
+                    this.buildSyntheticErrorResponse(
+                      lifecycle.hasMessageStart,
+                      lifecycle.hasMessageDelta,
+                      lifecycle.hasMessageStop
+                    )
+                  );
+                }
+                clientRes.end();
+              } catch {
+                // Client may have disconnected — safe to ignore
+              }
+              resolve();
+            });
             upstreamRes.on('error', reject);
             return;
           }
@@ -431,6 +656,7 @@ export class ToolSanitizationProxy {
           let buffer = '';
 
           upstreamRes.on('data', (chunk: Buffer) => {
+            lifecycle.hasData = true;
             buffer += chunk.toString('utf8');
 
             // Process complete SSE events
@@ -440,18 +666,41 @@ export class ToolSanitizationProxy {
             for (const event of events) {
               if (!event.trim()) continue;
 
+              lifecycle.update(event);
+
               const processedEvent = this.processSSEEvent(event, mapper);
               clientRes.write(processedEvent + '\n\n');
             }
           });
 
           upstreamRes.on('end', () => {
-            // Process any remaining buffer
-            if (buffer.trim()) {
-              const processedEvent = this.processSSEEvent(buffer, mapper);
-              clientRes.write(processedEvent + '\n\n');
+            try {
+              // Process any remaining buffer
+              if (buffer.trim()) {
+                lifecycle.update(buffer);
+                const processedEvent = this.processSSEEvent(buffer, mapper);
+                clientRes.write(processedEvent + '\n\n');
+              }
+
+              // Safety net: if upstream sent data but no content blocks, inject synthetic response
+              if (!lifecycle.hasContent && isSuccessResponse && lifecycle.hasData) {
+                this.writeLog(
+                  'warn',
+                  '[tool-sanitization-proxy] Empty response detected from upstream (no content blocks). Injecting synthetic response to prevent client crash.'
+                );
+                clientRes.write(
+                  this.buildSyntheticErrorResponse(
+                    lifecycle.hasMessageStart,
+                    lifecycle.hasMessageDelta,
+                    lifecycle.hasMessageStop
+                  )
+                );
+              }
+
+              clientRes.end();
+            } catch {
+              // Client may have disconnected — safe to ignore
             }
-            clientRes.end();
             resolve();
           });
 
@@ -521,5 +770,44 @@ export class ToolSanitizationProxy {
     }
 
     return processedLines.join('\n');
+  }
+
+  /**
+   * Build a synthetic minimal SSE response when upstream returns empty content.
+   * Prevents Claude Code from crashing with "No assistant message found".
+   * Omits lifecycle events that upstream already sent to avoid protocol violations.
+   */
+  private buildSyntheticErrorResponse(
+    upstreamSentMessageStart = false,
+    upstreamSentMessageDelta = false,
+    upstreamSentMessageStop = false
+  ): string {
+    const events: string[] = [];
+
+    // Only include message_start if upstream didn't already send one
+    if (!upstreamSentMessageStart) {
+      const msgId = `msg_synthetic_${Date.now()}`;
+      events.push(
+        `event: message_start\ndata: {"type":"message_start","message":{"id":"${msgId}","type":"message","role":"assistant","content":[],"model":"unknown","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}}`
+      );
+    }
+
+    events.push(
+      `event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+      `event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"[Proxy Error] The upstream API returned an empty response. This typically occurs when the proxy drops unsigned thinking blocks during sub-agent execution. Please retry the request."}}`,
+      `event: content_block_stop\ndata: {"type":"content_block_stop","index":0}`
+    );
+
+    if (!upstreamSentMessageDelta) {
+      events.push(
+        `event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":0}}`
+      );
+    }
+
+    if (!upstreamSentMessageStop) {
+      events.push(`event: message_stop\ndata: {"type":"message_stop"}`);
+    }
+
+    return events.join('\n\n') + '\n\n';
   }
 }

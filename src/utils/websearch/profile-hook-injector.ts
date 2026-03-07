@@ -114,7 +114,8 @@ export function ensureProfileHooks(profileName: string): boolean {
             warn(`Malformed ${profileName}.settings.json: ${(parseError as Error).message}`)
           );
         }
-        // Continue with empty settings, will add hooks
+        // Never overwrite malformed settings files; avoid destructive data loss.
+        return false;
       }
     }
 
@@ -123,11 +124,17 @@ export function ensureProfileHooks(profileName: string): boolean {
       // Clean up any duplicates that may have accumulated (Windows path bug fix)
       const hadDuplicates = deduplicateCcsHooks(settings);
       if (hadDuplicates) {
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
-        if (process.env.CCS_DEBUG) {
-          console.error(
-            info(`Removed duplicate WebSearch hooks from ${profileName}.settings.json`)
-          );
+        // Re-read file to compare with modified settings (deduplicateCcsHooks mutates in-place)
+        const newContent = JSON.stringify(settings, null, 2);
+        const existingContent = fs.readFileSync(settingsPath, 'utf8');
+        // Only write if content actually changed
+        if (newContent !== existingContent) {
+          fs.writeFileSync(settingsPath, newContent, 'utf8');
+          if (process.env.CCS_DEBUG) {
+            console.error(
+              info(`Removed duplicate WebSearch hooks from ${profileName}.settings.json`)
+            );
+          }
         }
       }
       // Update timeout if needed
@@ -195,7 +202,9 @@ function updateHookTimeoutIfNeeded(
       const command = hookArray[0].command;
       if (typeof command !== 'string') continue;
       // Normalize path separators for cross-platform matching (Windows uses backslashes)
-      const normalizedCommand = command.replace(/\\/g, '/');
+      const normalizedCommand = command
+        .replace(/\\/g, '/') // Windows backslashes
+        .replace(/\/+/g, '/'); // Collapse multiple slashes
       if (!normalizedCommand.includes('.ccs/hooks/websearch-transformer')) continue;
 
       // Found CCS hook - check if needs update

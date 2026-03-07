@@ -1,25 +1,20 @@
 /**
  * Provider Configuration
- * Shared constants for CLIProxy providers - SINGLE SOURCE OF TRUTH for UI
- *
- * When adding a new provider, update CLIPROXY_PROVIDERS array and related mappings.
+ * Backend provider capabilities are the source of truth.
+ * UI keeps only presentation-specific overrides (assets/colors/instructions).
  */
 
-/**
- * Canonical list of CLIProxy provider IDs
- * This is the UI's single source of truth for valid providers.
- * Must stay in sync with backend's CLIPROXY_PROFILES in src/auth/profile-detector.ts
- */
-export const CLIPROXY_PROVIDERS = [
-  'gemini',
-  'codex',
-  'agy',
-  'qwen',
-  'iflow',
-  'kiro',
-  'ghcp',
-  'claude',
-] as const;
+import {
+  CLIPROXY_PROVIDER_IDS,
+  PROVIDER_CAPABILITIES,
+  getProvidersByOAuthFlow,
+} from '../../../src/cliproxy/provider-capabilities';
+
+// Monorepo contract: UI consumes provider capability constants directly from backend
+// to enforce one source of truth and prevent provider drift across surfaces.
+
+/** Canonical list of CLIProxy provider IDs (shared with backend). */
+export const CLIPROXY_PROVIDERS = CLIPROXY_PROVIDER_IDS;
 
 /** Union type for CLIProxy provider IDs */
 export type CLIProxyProvider = (typeof CLIPROXY_PROVIDERS)[number];
@@ -29,8 +24,29 @@ export function isValidProvider(provider: string): provider is CLIProxyProvider 
   return CLIPROXY_PROVIDERS.includes(provider as CLIProxyProvider);
 }
 
+function normalizeProviderInput(provider: unknown): string {
+  return typeof provider === 'string' ? provider.trim().toLowerCase() : '';
+}
+
+interface ProviderMetadata {
+  displayName: string;
+  description: string;
+}
+
+export const PROVIDER_METADATA: Record<CLIProxyProvider, ProviderMetadata> = Object.freeze(
+  Object.fromEntries(
+    CLIPROXY_PROVIDERS.map((provider) => [
+      provider,
+      {
+        displayName: PROVIDER_CAPABILITIES[provider].displayName,
+        description: PROVIDER_CAPABILITIES[provider].description,
+      },
+    ])
+  ) as Record<CLIProxyProvider, ProviderMetadata>
+);
+
 // Map provider names to asset filenames (only providers with actual logos)
-export const PROVIDER_ASSETS: Record<string, string> = {
+export const PROVIDER_ASSETS: Record<CLIProxyProvider, string> = {
   gemini: '/assets/providers/gemini-color.svg',
   agy: '/assets/providers/agy.png',
   codex: '/assets/providers/openai.svg',
@@ -39,7 +55,58 @@ export const PROVIDER_ASSETS: Record<string, string> = {
   kiro: '/assets/providers/kiro.png',
   ghcp: '/assets/providers/copilot.svg',
   claude: '/assets/providers/claude.svg',
+  kimi: '/assets/providers/kimi.svg',
 };
+
+interface ProviderFallbackVisual {
+  textClass: string;
+  letter: string;
+}
+
+const DEFAULT_PROVIDER_FALLBACK_VISUAL: ProviderFallbackVisual = {
+  textClass: 'text-gray-600',
+  letter: '?',
+};
+
+/** Fallback visual style when a provider logo asset is unavailable. */
+export const PROVIDER_FALLBACK_VISUALS: Record<CLIProxyProvider, ProviderFallbackVisual> = {
+  gemini: { textClass: 'text-blue-600', letter: 'G' },
+  claude: { textClass: 'text-orange-600', letter: 'C' },
+  codex: { textClass: 'text-emerald-600', letter: 'X' },
+  agy: { textClass: 'text-violet-600', letter: 'A' },
+  qwen: { textClass: 'text-cyan-600', letter: 'Q' },
+  iflow: { textClass: 'text-indigo-600', letter: 'i' },
+  kiro: { textClass: 'text-teal-600', letter: 'K' },
+  ghcp: { textClass: 'text-green-600', letter: 'C' },
+  kimi: { textClass: 'text-orange-500', letter: 'K' },
+};
+
+/** Providers whose logo looks better on dark background. */
+export const PROVIDERS_WITH_DARK_LOGO_BG: ReadonlySet<CLIProxyProvider> = new Set(['kimi']);
+
+export function getProviderLogoAsset(provider: unknown): string | undefined {
+  const normalized = normalizeProviderInput(provider);
+  if (!isValidProvider(normalized)) {
+    return undefined;
+  }
+  return PROVIDER_ASSETS[normalized];
+}
+
+export function getProviderFallbackVisual(provider: unknown): ProviderFallbackVisual {
+  const normalized = normalizeProviderInput(provider);
+  if (isValidProvider(normalized)) {
+    return PROVIDER_FALLBACK_VISUALS[normalized];
+  }
+  return {
+    ...DEFAULT_PROVIDER_FALLBACK_VISUAL,
+    letter: normalized[0]?.toUpperCase() || DEFAULT_PROVIDER_FALLBACK_VISUAL.letter,
+  };
+}
+
+export function providerNeedsDarkLogoBackground(provider: unknown): boolean {
+  const normalized = normalizeProviderInput(provider);
+  return isValidProvider(normalized) && PROVIDERS_WITH_DARK_LOGO_BG.has(normalized);
+}
 
 // Provider brand colors
 export const PROVIDER_COLORS: Record<string, string> = {
@@ -49,25 +116,154 @@ export const PROVIDER_COLORS: Record<string, string> = {
   vertex: '#4285F4',
   iflow: '#f94144',
   qwen: '#6236FF',
-  kiro: '#4d908e', // Dark Cyan (AWS-inspired)
-  ghcp: '#43aa8b', // Seaweed (GitHub-inspired)
-  claude: '#D97757', // Anthropic brand color (matches SVG)
+  kiro: '#4d908e',
+  ghcp: '#43aa8b',
+  claude: '#D97757',
+  kimi: '#FF6B35',
 };
 
-// Provider display names
 const PROVIDER_NAMES: Record<string, string> = {
-  gemini: 'Gemini',
-  agy: 'Antigravity',
-  codex: 'Codex',
+  ...Object.fromEntries(
+    CLIPROXY_PROVIDERS.map((provider) => [provider, PROVIDER_METADATA[provider].displayName])
+  ),
   vertex: 'Vertex AI',
-  iflow: 'iFlow',
-  qwen: 'Qwen',
-  kiro: 'Kiro (AWS)',
-  ghcp: 'GitHub Copilot (OAuth)',
-  claude: 'Claude (Anthropic)',
 };
 
-// Map provider to display name
-export function getProviderDisplayName(provider: string): string {
-  return PROVIDER_NAMES[provider.toLowerCase()] || provider;
+export function getProviderDisplayName(provider: unknown): string {
+  const normalized = normalizeProviderInput(provider);
+  if (!normalized) {
+    return 'Unknown provider';
+  }
+  return PROVIDER_NAMES[normalized] || String(provider);
+}
+
+/** Map provider to user-facing short description */
+export function getProviderDescription(provider: unknown): string {
+  const normalized = normalizeProviderInput(provider);
+  if (!isValidProvider(normalized)) return '';
+  return PROVIDER_METADATA[normalized].description;
+}
+
+/**
+ * Providers that use Device Code OAuth flow instead of Authorization Code flow.
+ */
+export const DEVICE_CODE_PROVIDERS: CLIProxyProvider[] = [
+  ...getProvidersByOAuthFlow('device_code'),
+];
+
+const DEVICE_CODE_PROVIDER_DISPLAY_NAMES: Readonly<Partial<Record<CLIProxyProvider, string>>> =
+  Object.freeze({
+    ghcp: 'GitHub Copilot',
+    kiro: 'Kiro (AWS)',
+    qwen: 'Qwen Code',
+  });
+
+const DEVICE_CODE_PROVIDER_INSTRUCTIONS: Readonly<Partial<Record<CLIProxyProvider, string>>> =
+  Object.freeze({
+    ghcp: 'Sign in with your GitHub account that has Copilot access.',
+    qwen: 'Sign in with your Qwen account to authorize access.',
+    kiro: 'Sign in with your selected Kiro auth provider to continue.',
+    kimi: 'Sign in with your Kimi account and finish the device authorization.',
+  });
+
+/** Check if provider uses Device Code flow */
+export function isDeviceCodeProvider(provider: unknown): boolean {
+  const normalized = normalizeProviderInput(provider);
+  return isValidProvider(normalized) && DEVICE_CODE_PROVIDERS.includes(normalized);
+}
+
+/** Provider display name tuned for device-code UX copy. */
+export function getDeviceCodeProviderDisplayName(provider: unknown): string {
+  const normalized = normalizeProviderInput(provider);
+  if (!normalized) {
+    return 'Unknown provider';
+  }
+  if (isValidProvider(normalized)) {
+    return DEVICE_CODE_PROVIDER_DISPLAY_NAMES[normalized] || getProviderDisplayName(normalized);
+  }
+  return String(provider);
+}
+
+/** Provider-specific helper text for device-code dialog. */
+export function getDeviceCodeProviderInstruction(provider: unknown): string {
+  const normalized = normalizeProviderInput(provider);
+  if (isValidProvider(normalized)) {
+    return (
+      DEVICE_CODE_PROVIDER_INSTRUCTIONS[normalized] || 'Complete the authorization in your browser.'
+    );
+  }
+  return 'Complete the authorization in your browser.';
+}
+
+/** Providers that require nickname because token payload may not include email. */
+export const NICKNAME_REQUIRED_PROVIDERS: CLIProxyProvider[] = ['ghcp', 'kiro'];
+
+/** Check if provider requires user-supplied nickname in auth flow */
+export function isNicknameRequiredProvider(provider: unknown): boolean {
+  const normalized = normalizeProviderInput(provider);
+  return isValidProvider(normalized) && NICKNAME_REQUIRED_PROVIDERS.includes(normalized);
+}
+
+/** Kiro auth methods exposed in CCS UI (aligned with CLIProxyAPIPlus support). */
+export const KIRO_AUTH_METHODS = ['aws', 'aws-authcode', 'google', 'github'] as const;
+export type KiroAuthMethod = (typeof KIRO_AUTH_METHODS)[number];
+
+export type KiroFlowType = 'authorization_code' | 'device_code';
+export type KiroStartEndpoint = 'start' | 'start-url';
+
+export interface KiroAuthMethodOption {
+  id: KiroAuthMethod;
+  label: string;
+  description: string;
+  flowType: KiroFlowType;
+  startEndpoint: KiroStartEndpoint;
+}
+
+/** UX-first default for issue #233: AWS Builder ID device flow. */
+export const DEFAULT_KIRO_AUTH_METHOD: KiroAuthMethod = 'aws';
+
+export const KIRO_AUTH_METHOD_OPTIONS: readonly KiroAuthMethodOption[] = [
+  {
+    id: 'aws',
+    label: 'AWS Builder ID (Recommended)',
+    description: 'Device code flow for AWS organizations and Builder ID accounts.',
+    flowType: 'device_code',
+    startEndpoint: 'start',
+  },
+  {
+    id: 'aws-authcode',
+    label: 'AWS Builder ID (Auth Code)',
+    description: 'Authorization code flow via CLI binary.',
+    flowType: 'authorization_code',
+    startEndpoint: 'start',
+  },
+  {
+    id: 'google',
+    label: 'Google OAuth',
+    description: 'Social OAuth flow with callback URL support.',
+    flowType: 'authorization_code',
+    startEndpoint: 'start-url',
+  },
+  {
+    id: 'github',
+    label: 'GitHub OAuth',
+    description: 'Social OAuth flow via management API callback.',
+    flowType: 'authorization_code',
+    startEndpoint: 'start-url',
+  },
+];
+
+export function isKiroAuthMethod(value: string): value is KiroAuthMethod {
+  return KIRO_AUTH_METHODS.includes(value as KiroAuthMethod);
+}
+
+export function normalizeKiroAuthMethod(value?: string): KiroAuthMethod {
+  if (!value) return DEFAULT_KIRO_AUTH_METHOD;
+  const normalized = value.trim().toLowerCase();
+  return isKiroAuthMethod(normalized) ? normalized : DEFAULT_KIRO_AUTH_METHOD;
+}
+
+export function getKiroAuthMethodOption(method: KiroAuthMethod): KiroAuthMethodOption {
+  const option = KIRO_AUTH_METHOD_OPTIONS.find((candidate) => candidate.id === method);
+  return option || KIRO_AUTH_METHOD_OPTIONS[0];
 }

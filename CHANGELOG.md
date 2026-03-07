@@ -1,3 +1,760 @@
+## [7.52.2](https://github.com/kaitranntt/ccs/compare/v7.52.1...v7.52.2) (2026-03-04)
+
+### Bug Fixes
+
+* **ci:** remove LOC count from maintainability gate ([619c47d](https://github.com/kaitranntt/ccs/commit/619c47d89ae405690cddc849dcf15e8cc3240ab5))
+* **ci:** strip ANSI codes before detecting published release ([a8d7f7c](https://github.com/kaitranntt/ccs/commit/a8d7f7caafb361e961aa2f17e0084d551b4674f7))
+* **cliproxy:** reduce gemini alias model bloat ([276649f](https://github.com/kaitranntt/ccs/commit/276649f05d8da2948b10db5ab1d7a78c60e1e654))
+* **copilot:** harden daemon lifecycle and validate config updates ([1fd128e](https://github.com/kaitranntt/ccs/commit/1fd128e50feb3fe779ac30e8706c722024e77543))
+* **copilot:** improve daemon liveness and flag aliases ([4b1cda2](https://github.com/kaitranntt/ccs/commit/4b1cda25d945e6482be68804907177a8ad38489e))
+* **copilot:** refine ownership checks and command error handling ([930d66f](https://github.com/kaitranntt/ccs/commit/930d66fc0d31468ecc53fc50bd6db81aaed1fb7b))
+* **copilot:** sync alias UX and harden daemon stop safety ([f4678d6](https://github.com/kaitranntt/ccs/commit/f4678d639772699d9f3504dcd05bc9e311f67527))
+
+### Code Refactoring
+
+* **daemon:** share process ownership guard for safe shutdown ([5ad2416](https://github.com/kaitranntt/ccs/commit/5ad2416a863e8190351a1ee42e00646093e3e70f))
+
+### Tests
+
+* **cliproxy:** strengthen alias non-enrichment assertions ([e28d9c8](https://github.com/kaitranntt/ccs/commit/e28d9c8abcea772b8fff7e6587582aac692a2726))
+
+### CI
+
+* **release:** use PAT_TOKEN for semantic-release branch protection bypass ([91280e3](https://github.com/kaitranntt/ccs/commit/91280e3043bd981b86b187fbfbead5ca6f31139d))
+
+## [7.52.1](https://github.com/kaitranntt/ccs/compare/v7.52.0...v7.52.1) (2026-03-03)
+
+### Bug Fixes
+
+* **ci:** strip ANSI codes before detecting published release ([6e16f1c](https://github.com/kaitranntt/ccs/commit/6e16f1cf3e2a3d43fa600a6fbadd35a513bf5db7))
+
+## [7.52.0](https://github.com/kaitranntt/ccs/compare/v7.51.0...v7.52.0) (2026-03-03)
+
+### Features
+
+* **analytics:** integrate CLIProxy multi-provider usage into dashboard ([c5124a9](https://github.com/kaitranntt/ccs/commit/c5124a9cee7e37caaef811051852946467ee97e1))
+* **api:** add Alibaba Coding Plan preset and providers promotion ([8811e53](https://github.com/kaitranntt/ccs/commit/8811e5320fe6d5340ad2bcdca24fd98599ceb716))
+* **continuity:** support cross-profile continuity inheritance from account profiles ([0b9f982](https://github.com/kaitranntt/ccs/commit/0b9f9826e2c838e19c4bf9bc406ab14a5456fbcc))
+* **i18n:** add comprehensive Vietnamese dashboard locale ([7893436](https://github.com/kaitranntt/ccs/commit/789343603803cd6fc90b5e162df969b25ad858da))
+* **i18n:** Added support for Chinese language pack ([7ffb8a4](https://github.com/kaitranntt/ccs/commit/7ffb8a42340abc7e36282b2d67665c226203c5af))
+* **pricing:** fix claude sonnet 4.6 and claude opus 4.6 pricing ([9a7ca3f](https://github.com/kaitranntt/ccs/commit/9a7ca3f1c0f6e5518d8f130d9d061599d3c27ad0))
+
+### Bug Fixes
+
+* **agy:** harden preset canonicalization and migration coverage ([747c706](https://github.com/kaitranntt/ccs/commit/747c70636950e72fcbdf0bf92fe54f7800fa0a8a))
+* **agy:** harden self-migration across settings load/update paths ([3a26aba](https://github.com/kaitranntt/ccs/commit/3a26abac71e36d6f1d95333a47feb3c3cd08cce5))
+* **agy:** normalize sonnet 4.6 model ids and migrate legacy thinking alias ([8a2b554](https://github.com/kaitranntt/ccs/commit/8a2b55449bd12df5183587fd801aa87581800b0a))
+* **agy:** remove deprecated 4.5 selector options ([5913f73](https://github.com/kaitranntt/ccs/commit/5913f730ac370720febd31ad874bcbfa040a2671))
+* **api-profiles:** keep AGY denylist when droid provider is set ([2710139](https://github.com/kaitranntt/ccs/commit/27101390fe3e6c2020088e83e004f4b5037b59c5))
+* **auth:** harden continuity inheritance resolution ([8a45727](https://github.com/kaitranntt/ccs/commit/8a45727b314194af42533ec0cad95a3314ada162))
+* **auth:** scope km alias mapping to settings profiles ([d827c3a](https://github.com/kaitranntt/ccs/commit/d827c3ab0baaacaf116e81c7aabf7f426f5201da))
+* **ci:** harden release workflows against PAT checkout failures ([b35c85d](https://github.com/kaitranntt/ccs/commit/b35c85d308ef2ddff8f04e46bd005eae5983bc91))
+* **ci:** remove PAT dependency from release workflow checkouts ([a259d95](https://github.com/kaitranntt/ccs/commit/a259d957b15c97381c86570080a4b173d657aefa))
+* **cliproxy:** denylist deprecated agy 4.5 models ([f63e2cd](https://github.com/kaitranntt/ccs/commit/f63e2cd5a31a73c980d199b65eb3a320094c46ae))
+* **cliproxy:** harden agy model canonicalization and migration paths ([0b57e41](https://github.com/kaitranntt/ccs/commit/0b57e41b3a0c1d277d202dc84f6c9c13be76e222))
+* **cliproxy:** normalize iflow aliases for explicit routing ([7e471e6](https://github.com/kaitranntt/ccs/commit/7e471e663c8b0a8f7cdee10a9146e5a9b6035411))
+* **cliproxy:** normalize stale iflow model aliases ([546c4ee](https://github.com/kaitranntt/ccs/commit/546c4ee4ee006589f179b544c6b73e362b7ebbe6))
+* **cliproxy:** restore agy legacy 4.5 lookup compatibility ([ed05cfc](https://github.com/kaitranntt/ccs/commit/ed05cfc5a7bc6e7335d360acca88b86d521826c8))
+* **config:** merge legacy and unified continuity maps ([1eb41cc](https://github.com/kaitranntt/ccs/commit/1eb41cc4e217554021be4d0c20d8ff2f13ebedcd))
+* **ghcp:** improve oauth failure diagnostics in device flow ([c2f564a](https://github.com/kaitranntt/ccs/commit/c2f564ac662534e7abb6d090e75820581cf46012))
+* **i18n:** complete Vietnamese dashboard copy QA polish ([b07c62c](https://github.com/kaitranntt/ccs/commit/b07c62cc219d02005ca2e308fbe6c30308ca7a59))
+* **i18n:** harden unstable dialog and complete cursor locale key ([552eee3](https://github.com/kaitranntt/ccs/commit/552eee31692d9150e429abbc2ec2dff076ed740a))
+* **i18n:** polish remaining Vietnamese copy for dashboard context ([f3f315e](https://github.com/kaitranntt/ccs/commit/f3f315e86aad3f65075b503026657f30718e0e06))
+* **i18n:** refine Vietnamese dashboard translation quality ([758fcc7](https://github.com/kaitranntt/ccs/commit/758fcc7754b20faf1bf48ca564eb86283c231ac9))
+* **pricing:** handle date-stamped 4.6 thinking model IDs ([d31f85b](https://github.com/kaitranntt/ccs/commit/d31f85b0d4ccbf0edddcd2f58a49c1f9777cc6e1))
+* respect auto_update preference by disabling Claude auto-updater ([4cdb659](https://github.com/kaitranntt/ccs/commit/4cdb6594f80df8f40118202ae285d3f03adfadab))
+* **security:** harden API endpoints and resolve PR [#674](https://github.com/kaitranntt/ccs/issues/674) review findings ([a4c5bb7](https://github.com/kaitranntt/ccs/commit/a4c5bb7421748e744c07eb7ab5c7cfb3a55b8081))
+* **ui:** improve providers badge readability and albb preset ([3b38f1a](https://github.com/kaitranntt/ccs/commit/3b38f1ac90ac027011711d00fe7d545be717ddc4))
+* **ui:** restore scrolling in API profile create dialog ([6f8514b](https://github.com/kaitranntt/ccs/commit/6f8514b74b4383e94788224e25e78b9ede7c56d0))
+* **usage:** coalesce refresh and force live sync on refresh ([09ce1a9](https://github.com/kaitranntt/ccs/commit/09ce1a93797da942629f504821a3303afd5e2e4f))
+* **web-server:** run usage cleanup during dashboard shutdown ([e8519b6](https://github.com/kaitranntt/ccs/commit/e8519b6ac3465738cb7a09059d095fbdab94d36c))
+
+### Documentation
+
+* **i18n:** add dashboard localization guide and links ([2dddf02](https://github.com/kaitranntt/ccs/commit/2dddf02a216d14c53af6d5bcb585aa2ce346f36f))
+
+### Code Refactoring
+
+* **routes:** resolve DRY violations, config race, and error leaks ([e255855](https://github.com/kaitranntt/ccs/commit/e255855775c59dab3ad5b39a97d8176c77e0e889))
+
+### Tests
+
+* **auth:** cover legacy alias isolation for continuity ([26f4fb3](https://github.com/kaitranntt/ccs/commit/26f4fb3a99035dff9ef5e012b2e169bee9a9587b))
+* **pricing:** cover Claude 4.6 cache token cost rates ([91050bf](https://github.com/kaitranntt/ccs/commit/91050bfebf15fa39eefdc819af3cd0450c79889e))
+* **usage:** add cliproxy sync and integration coverage ([383ac94](https://github.com/kaitranntt/ccs/commit/383ac94623f69fc024e12008c6d40f059ae12491))
+
+### CI
+
+* **release:** use PAT_TOKEN for semantic-release branch protection bypass ([343c36f](https://github.com/kaitranntt/ccs/commit/343c36f97d949dfb85ee92a7161c60197413cf11))
+
+## [7.51.0](https://github.com/kaitranntt/ccs/compare/v7.50.0...v7.51.0) (2026-02-26)
+
+### Features
+
+* **accounts-ui:** add history sync learning visualization ([6cfc8d4](https://github.com/kaitranntt/ccs/commit/6cfc8d4a45fcaf80f413dd1b397e5f7f46f889d0))
+* **accounts-ui:** redesign accounts dashboard to column layout ([12c7a21](https://github.com/kaitranntt/ccs/commit/12c7a218b709cd1a93709b6f36c6afa0afdb2697))
+* **accounts:** add advanced deeper continuity mode and claude pool discoverability ([b6475ba](https://github.com/kaitranntt/ccs/commit/b6475baab3380328da9293905572d2b1274d6dfa))
+* **agy:** add power-user bypass for responsibility acknowledgement ([d3c271a](https://github.com/kaitranntt/ccs/commit/d3c271ab2c6bcf85e14faffb16e7f976c86c0312))
+* **api:** add --target to api command ([3dacb39](https://github.com/kaitranntt/ccs/commit/3dacb39deb5cf88978c7d98e3cd95c5a12dca455))
+* **api:** persist profile target metadata ([461236e](https://github.com/kaitranntt/ccs/commit/461236e5decc88e3488781cd94528d2ef99a3e9d))
+* **api:** support profile target in routes ([e833054](https://github.com/kaitranntt/ccs/commit/e8330546429803a1a94cc508e3dc6a1572ecef9c))
+* **cliproxy:** accept target in variant routes ([5b60784](https://github.com/kaitranntt/ccs/commit/5b60784eb82e51c0356cf416ba6323094e04d19c))
+* **cliproxy:** add target support to subcommands ([d2d1d59](https://github.com/kaitranntt/ccs/commit/d2d1d599cd220fb1e2c1eae9a501148b97f0770b))
+* **cliproxy:** persist target on variants ([f4a6927](https://github.com/kaitranntt/ccs/commit/f4a692729300d0ec7894b985c57a9d3a5cfc5a52))
+* **config:** support legacy profile target overrides ([9a63f9b](https://github.com/kaitranntt/ccs/commit/9a63f9bd36d6c53131b1a7681c7c7658516cce46))
+* **dashboard:** add dedicated Factory Droid diagnostics page ([bc079bc](https://github.com/kaitranntt/ccs/commit/bc079bc88656435da1d5b4b2329f89c90c910d1b))
+* **dashboard:** enrich droid docs and quick settings controls ([031dcd9](https://github.com/kaitranntt/ccs/commit/031dcd99c3978ca6d00a402a2cb2ce5e9d2306a2))
+* **droid:** align BYOK provider mapping for ccsd ([60b1c04](https://github.com/kaitranntt/ccs/commit/60b1c043c7e721ca576f9b4f4188468a3ddea846)), closes [#632](https://github.com/kaitranntt/ccs/issues/632)
+* **droid:** sync reasoning effort across CLI and dashboard ([eedb53b](https://github.com/kaitranntt/ccs/commit/eedb53b49e41b044f570a7273c6b6a9231cd75d2))
+* **pricing:** add MiniMax M2.5/M2.5-lightning and Qwen3 series (max/plus/flash/coder) model pricing ([089aa08](https://github.com/kaitranntt/ccs/commit/089aa081361f8375a951579ee4f80230efcac904))
+* **runtime:** run cliproxy profiles on droid ([8a2a7c3](https://github.com/kaitranntt/ccs/commit/8a2a7c3eb0c86aa1207099d9f67fb57840860673))
+* **ui:** add target controls to cliproxy variants ([543ec5f](https://github.com/kaitranntt/ccs/commit/543ec5f0502e6c9cb24e0837b72e6c4d82f15c4d))
+* **ui:** add target support to API profile dashboard ([ca78e63](https://github.com/kaitranntt/ccs/commit/ca78e63205aeb7cbd6c059c7f70fffcc509f860d))
+* **ui:** add updates center with support matrix ([e9d2515](https://github.com/kaitranntt/ccs/commit/e9d2515a7fdb6864d00a97d90e3cd55c18fc1e4b))
+* **ui:** redesign updates center into action inbox ([78eac7d](https://github.com/kaitranntt/ccs/commit/78eac7d500669fbba43ff4e17e84d9ca9fc52961))
+* **ui:** support editing profile default target ([db38ccc](https://github.com/kaitranntt/ccs/commit/db38ccc117e59fdc9f70c584aaa569b7f70cbe4a))
+* **ui:** surface cliproxy target in provider editor ([6aae3ba](https://github.com/kaitranntt/ccs/commit/6aae3ba998c8463f5cda6b216c15dec3f1c6a443))
+* **ui:** surface updates center across dashboard ([c7c4c87](https://github.com/kaitranntt/ccs/commit/c7c4c87fb43c631564ba25900fef43e1768a1a06))
+
+### Bug Fixes
+
+* **accounts-ui:** add actionable continuity controls and claude deep-link ([a974efb](https://github.com/kaitranntt/ccs/commit/a974efb8b11e02d26234d8cd9303ae9aef420d67))
+* **accounts-ui:** condense sync guidance and remove redundant controls ([286180e](https://github.com/kaitranntt/ccs/commit/286180e4653a1b2a467f2fd87ed1a192545a9496))
+* **accounts-ui:** move action center content into left column ([cfdad81](https://github.com/kaitranntt/ccs/commit/cfdad81beef1fbd5051e3daf0ff9ba8240eb66bb))
+* **accounts-ui:** remove extra left-column wrapper layers ([5996f9d](https://github.com/kaitranntt/ccs/commit/5996f9df7a06064ee01aa6fa032d266a2c6edfba))
+* **accounts-ui:** simplify left action column hierarchy ([7fccb18](https://github.com/kaitranntt/ccs/commit/7fccb1843d85efe3f01198aabf71ba71d35321ca))
+* **accounts-ui:** soften details trigger hover state ([1708128](https://github.com/kaitranntt/ccs/commit/1708128a6201de8758a6632e732bf9fb5e50fff3))
+* **accounts:** focus dashboard on auth profiles and legacy context onboarding ([10c08b9](https://github.com/kaitranntt/ccs/commit/10c08b9be83d176e04034509ccf20d56a3adc861))
+* **accounts:** improve shared-context editing and discoverability ([5c6fe20](https://github.com/kaitranntt/ccs/commit/5c6fe20d3f223fccdebeb781df6f363901666e72))
+* **agy:** align responsibility flow with issue [#509](https://github.com/kaitranntt/ccs/issues/509) ([3148014](https://github.com/kaitranntt/ccs/commit/3148014c6c23d088a5dad097eb0539a72bfec27d)), closes [622/#619](https://github.com/622/ccs/issues/619)
+* **agy:** enforce multi-step responsibility acknowledgement for antigravity oauth ([3b1271b](https://github.com/kaitranntt/ccs/commit/3b1271b5e4bd48e65d599323c07eebdffd7c8995))
+* **agy:** use type-only import for ui checklist value ([7b4bd80](https://github.com/kaitranntt/ccs/commit/7b4bd804c88d1f9355600d8945ef683c45d854bc))
+* **api:** remove stale legacy profile target mappings ([e32dedc](https://github.com/kaitranntt/ccs/commit/e32dedcf4c0f45470303eba6ed66e10c21097c72))
+* **auth:** close shared-context isolation edge cases ([0b070a3](https://github.com/kaitranntt/ccs/commit/0b070a3f343846cb8082fcd351f0bcb3fc2f109d))
+* **auth:** harden agy safety endpoints and config writes ([b602ab9](https://github.com/kaitranntt/ccs/commit/b602ab99ab6a1da755d1c8fedfdae4e15a926a8a))
+* **auth:** harden shared-context isolation and config safety ([0309630](https://github.com/kaitranntt/ccs/commit/0309630193a222c0d03dbcdad749101af1ee5433))
+* **auth:** harden shared-context isolation edge cases ([7d5e604](https://github.com/kaitranntt/ccs/commit/7d5e604e53b47811557baf4b1a6c4a11ed70af9a))
+* **ci:** align maintainability baseline for PR merge checks ([a8b8e63](https://github.com/kaitranntt/ccs/commit/a8b8e633efd06399f120baf2128b1c2921ac4e99))
+* **ci:** refresh maintainability baseline for dev release ([d6fd598](https://github.com/kaitranntt/ccs/commit/d6fd5985bc329ff5efdc83f51e44bc0ecea67745))
+* **cli:** improve cliproxy target parsing edge cases ([8d95de9](https://github.com/kaitranntt/ccs/commit/8d95de9fd37cfbe8be9e83481cce07dedc418106))
+* **cliproxy-sync:** honor profile settings paths and targets ([ac1c744](https://github.com/kaitranntt/ccs/commit/ac1c744239d57fb52441dde32cd5cb7f41e9f2b5))
+* **cliproxy:** normalize deprecated antigravity Claude aliases ([ff9dbb3](https://github.com/kaitranntt/ccs/commit/ff9dbb30614263b1f0b0751f1277728b636ef236))
+* **dashboard:** align droid config diagnostics with factory paths ([c6d2e71](https://github.com/kaitranntt/ccs/commit/c6d2e71ec2f4e2587b13e1bb7d01d53499cd0cdf))
+* **dashboard:** guard droid docs links for older API payloads ([e7f3b3f](https://github.com/kaitranntt/ccs/commit/e7f3b3ffcf4d020ac20561e1d2c24d7aaa33e494))
+* **dashboard:** make droid docs links always clickable ([1704b80](https://github.com/kaitranntt/ccs/commit/1704b802ee4f32218d6c5707dd0dc2b617064dde))
+* **droid:** add structural exec passthrough for ccsd ([5963ba9](https://github.com/kaitranntt/ccs/commit/5963ba973e8fd2a9deef26a713159e4af0d3670e))
+* **droid:** avoid interactive model arg prompt pollution ([f1567c0](https://github.com/kaitranntt/ccs/commit/f1567c0090c03d6b95d8cee94ce8dc29d57d3359))
+* **droid:** harden exec passthrough and add integration coverage ([ce44d2e](https://github.com/kaitranntt/ccs/commit/ce44d2ece0393e70b5f9c0df942c102298aa6ca9))
+* **droid:** restore tabbed layout and stabilize save state ([a88fd68](https://github.com/kaitranntt/ccs/commit/a88fd68c34ea94555ab9efe89ead8dbe9d72a8a5))
+* **help:** align cliproxy status and provider filter docs ([b658b20](https://github.com/kaitranntt/ccs/commit/b658b20709e4b8b1766442cbc4b9c944d34fc0bc))
+* **iflow:** replace placeholder model defaults to prevent 406 ([03bc414](https://github.com/kaitranntt/ccs/commit/03bc4140a1c668fa96476319fb8f780661620417))
+* **maintainability:** make gate parallel-pr friendly ([fdb32e2](https://github.com/kaitranntt/ccs/commit/fdb32e2c535e541e1d7336099aed94a180711bcb))
+* **pricing:** normalize model aliases for MiniMax and Qwen ([7ac5e3e](https://github.com/kaitranntt/ccs/commit/7ac5e3edab0e06d817933b3597038561e4995392))
+* **proxy:** harden AGY risk persistence and confirm UX ([36d5cb7](https://github.com/kaitranntt/ccs/commit/36d5cb723e39ec44926bec9a713ba7dbc121332d)), closes [#509](https://github.com/kaitranntt/ccs/issues/509)
+* **safety:** unify add-account typed risk phrase ([c0eb786](https://github.com/kaitranntt/ccs/commit/c0eb786127d7552254efc170be040d162c8d8b09))
+* **shared:** harden markdown traversal and parsing ([46b4f9c](https://github.com/kaitranntt/ccs/commit/46b4f9c1cf36febe578c996c8e7ffcc7948993cb))
+* **shared:** polish shared data UX and route persistence ([f9f063c](https://github.com/kaitranntt/ccs/commit/f9f063ca011ce3a2ce421b0516a030b4aa505052))
+* **shared:** resolve strict ui build typing errors ([787ebbc](https://github.com/kaitranntt/ccs/commit/787ebbc7f9a144aa10967d791d248220c01be130))
+* **shared:** support file-based agents and recursive commands ([346fa5f](https://github.com/kaitranntt/ccs/commit/346fa5fcda7f740b01a219575f466452adbfdfb2))
+* **targets:** sanitize invalid persisted target values ([2bd3c40](https://github.com/kaitranntt/ccs/commit/2bd3c40c7ad4072634b395c0c5cfa7a29a2657a2))
+* **ui:** align cliproxy log polling with existing API routes ([a7db16c](https://github.com/kaitranntt/ccs/commit/a7db16c12959e4acd62f2d73e31dfc3e77e864d6))
+* **ui:** align cliproxy target schema typing ([1c7e4e1](https://github.com/kaitranntt/ccs/commit/1c7e4e116f05fff4802c5b2b228cdffebe4e2228))
+* **ui:** align updates page with dashboard layout patterns ([d47efc7](https://github.com/kaitranntt/ccs/commit/d47efc783ea606d6d9d4238d7b16bfadd0a1e25d))
+* **ui:** de-surface updates center from primary navigation ([69378ad](https://github.com/kaitranntt/ccs/commit/69378ada3e779e8e731b4681486648a166482beb))
+* **ui:** harden target update flows in profile editors ([d385bd1](https://github.com/kaitranntt/ccs/commit/d385bd19f2206db98571a184eba7960edb382afa))
+* **ui:** improve agy auth UX and flow resilience ([6e20cdc](https://github.com/kaitranntt/ccs/commit/6e20cdcdff18abc176d09acfe7b4a98e3475f54e))
+* **ui:** keep home route at root without last-route redirect ([c130e9a](https://github.com/kaitranntt/ccs/commit/c130e9a0cca0409a3731569db56768d37178aebf))
+* **ui:** move agy power-user mode to proxy settings ([30dccb1](https://github.com/kaitranntt/ccs/commit/30dccb14fe03eacad2c42cb90c932492ab958e35)), closes [#509](https://github.com/kaitranntt/ccs/issues/509)
+* **ui:** redesign updates page as changelog-first layout ([4736445](https://github.com/kaitranntt/ccs/commit/473644564d4ef7785fe06bac3d6c6d5baef16ca3))
+* **ui:** remove nested sidebar list markup ([1698ead](https://github.com/kaitranntt/ccs/commit/1698eadc943fbeca97e32a5857f95507fe62106e))
+* **ui:** tighten updates action row type narrowing ([ae7ab59](https://github.com/kaitranntt/ccs/commit/ae7ab59746172419eba5b7a5ab9773e7e0c199a7))
+* **ui:** unify gemini and agy safety warning banner ([e22d331](https://github.com/kaitranntt/ccs/commit/e22d331bf19131c47ec59522c8fc573e257d4381)), closes [#509](https://github.com/kaitranntt/ccs/issues/509)
+* **websearch:** support Gemini positional prompt mode ([0d09604](https://github.com/kaitranntt/ccs/commit/0d09604bb98cf8e9cfbe2f35adec65277fcf1003))
+
+### Documentation
+
+* **cli:** document target defaults and ccsd cliproxy usage ([172e599](https://github.com/kaitranntt/ccs/commit/172e5995747c31acce3da4ab395e5581d7130e65))
+* **readme:** document dashboard updates center ([0a5b12b](https://github.com/kaitranntt/ccs/commit/0a5b12b46bd587d0651524da4ea6eb5f8d787201))
+
+### Code Refactoring
+
+* **dashboard:** reuse compatible CLI settings editor stack ([e9eab71](https://github.com/kaitranntt/ccs/commit/e9eab712b3f60d1dcf45746df69dabac29beb299))
+* **dashboard:** switch droid settings I/O to async fs ([20e48b3](https://github.com/kaitranntt/ccs/commit/20e48b3dc0e91fd0984ff1d059169aa6b64a84ce))
+* **ui:** remove unused last-route restore helpers ([766cc1b](https://github.com/kaitranntt/ccs/commit/766cc1b43e251db2f166073d2a173ebd2d2cbd5f))
+
+### Tests
+
+* **web-server:** cover profile and variant target parsing ([2e8c7a3](https://github.com/kaitranntt/ccs/commit/2e8c7a36915e86e697b358db68aa029a200627da))
+
+## [7.50.0](https://github.com/kaitranntt/ccs/compare/v7.49.1...v7.50.0) (2026-02-24)
+
+### Features
+
+* **auth:** add opt-in shared context groups across accounts ([4fed74c](https://github.com/kaitranntt/ccs/commit/4fed74c64b302ea70772894d52c6f3fad1e60c67))
+
+### Bug Fixes
+
+* **cliproxy:** prevent agy model reset and add sonnet 4.6 models ([bebb758](https://github.com/kaitranntt/ccs/commit/bebb7582cf4e168628e171b48954bd1d982a129e))
+
+## [7.49.1](https://github.com/kaitranntt/ccs/compare/v7.49.0...v7.49.1) (2026-02-24)
+
+### Bug Fixes
+
+* **cliproxy:** prevent blank page in remote mode ([4eb2be7](https://github.com/kaitranntt/ccs/commit/4eb2be79fcf8c8e04007cc33a83c2e693fb0072f))
+* **cliproxy:** strengthen account safety warning and redesign alert UI ([00495b6](https://github.com/kaitranntt/ccs/commit/00495b667533a4a1fbb3560a3391c2547bc228f9))
+
+## [7.49.0](https://github.com/kaitranntt/ccs/compare/v7.48.1...v7.49.0) (2026-02-23)
+
+### Features
+
+* **memory:** share project memory across account instances ([e2623e6](https://github.com/kaitranntt/ccs/commit/e2623e632c057dc88f7ee1061864b44efbe2e03a))
+
+### Bug Fixes
+
+* **ci:** auto-close released issues in stable release workflow ([b6f2d5d](https://github.com/kaitranntt/ccs/commit/b6f2d5d249dde80a3288a79e9dc783756296e79c))
+* **codex:** canonicalize dashboard presets and migrate suffixed settings ([be96b84](https://github.com/kaitranntt/ccs/commit/be96b84e613ac4be217ea05c8090318df1114469))
+* **codex:** preserve codex tier efforts in auto thinking ([db80f85](https://github.com/kaitranntt/ccs/commit/db80f85e38abe7ace0c25b774cdf65ed4913b8df))
+* **codex:** validate tier thinking values before suffixing ([57e14cf](https://github.com/kaitranntt/ccs/commit/57e14cf3a69e5106a0a29ffda77f8aa134aa435d))
+* **memory:** use async fs APIs to satisfy maintainability gate ([c6c44d0](https://github.com/kaitranntt/ccs/commit/c6c44d03411a85034ab452ac8fc82b35b50c3c27))
+* resolve package.json version conflict from main merge ([6840523](https://github.com/kaitranntt/ccs/commit/68405239cdc848b934a185139226cd286f43ea9d))
+* **web-server:** detect symlinked shared entries ([e3dbc67](https://github.com/kaitranntt/ccs/commit/e3dbc6763436e97b6ae2ec6687174fb6c6904dc7))
+* **web-server:** harden shared route symlink scanning ([498b66d](https://github.com/kaitranntt/ccs/commit/498b66d9cceaf34a36e81403fa15b73093eda2c9))
+
+## [7.48.1](https://github.com/kaitranntt/ccs/compare/v7.48.0...v7.48.1) (2026-02-23)
+
+### Bug Fixes
+
+* **ci:** enforce parity gate and stabilize test execution ([0aed60f](https://github.com/kaitranntt/ccs/commit/0aed60febb1752fab3b3f765fc2233f013af971f))
+
+## [7.48.0](https://github.com/kaitranntt/ccs/compare/v7.47.0...v7.48.0) (2026-02-22)
+
+### Features
+
+* **cliproxy:** add Claude quota windows and account failover ([2385d90](https://github.com/kaitranntt/ccs/commit/2385d9028ae37d00200516c9728cb29b9c45fd21))
+
+### Bug Fixes
+
+* **cliproxy:** add gemini 3.1 preview alias compatibility ([653f809](https://github.com/kaitranntt/ccs/commit/653f8092aea7e9b0d0e3f7ca7d6fd2a42f87e4a5))
+* **cliproxy:** close remaining quota edge-case gaps ([8c790f4](https://github.com/kaitranntt/ccs/commit/8c790f41ffba9a09467899b8b641dcbe2b692ae3))
+* **cliproxy:** harden antigravity alias generation ([63619cb](https://github.com/kaitranntt/ccs/commit/63619cb9dc7b4eb35b4904322b5fe02d36278638))
+* **cliproxy:** harden quota guards and review follow-ups ([ca58cb5](https://github.com/kaitranntt/ccs/commit/ca58cb5a088d0f4e714d0936d5b339de8f5ad053))
+* **cliproxy:** keep canonical codex model ids in settings ([a81176d](https://github.com/kaitranntt/ccs/commit/a81176da79568189a686f748d3f76b2c3e1a4240))
+* **cliproxy:** keep remote-proxy client under maintainability limit ([88be99f](https://github.com/kaitranntt/ccs/commit/88be99f8a071c8f5786800a958218948286cbba0))
+* **cliproxy:** normalize codex effort aliases without reasoning proxy ([742b5ed](https://github.com/kaitranntt/ccs/commit/742b5ed5803dc7937547fc5cf78c8b23c6b3d10f))
+* **cliproxy:** normalize provider-aware Claude model IDs ([6429781](https://github.com/kaitranntt/ccs/commit/6429781e8fc7ec5d72aedb7b2409f26f0c739e00))
+* **cliproxy:** prevent false remote timeout on reachable proxy ([34292ca](https://github.com/kaitranntt/ccs/commit/34292ca7f8d1cb51b7aaa5a59383e8ff2a381bd4))
+* **cliproxy:** split claude quota fetcher for maintainability gate ([9371a72](https://github.com/kaitranntt/ccs/commit/9371a72c1638d72f2a3e1fcb3fe9416c79f7cd1a))
+* **core:** resolve edge cases and hardcoded drift ([343ec95](https://github.com/kaitranntt/ccs/commit/343ec959fc8ea26c3e2b75d88613627cdad3b223))
+* **persist:** add auto-approve permission flags ([e3255e5](https://github.com/kaitranntt/ccs/commit/e3255e5615df121831f626300510c934518d2cca))
+* **persist:** harden persist restore safety and edge cases ([29cceb3](https://github.com/kaitranntt/ccs/commit/29cceb3a881600d70511bcc6d11b63f5b809f04b))
+* **persist:** resolve CI gate and review test gaps ([61bcd4d](https://github.com/kaitranntt/ccs/commit/61bcd4df5e343a34c3089c939ee23ce9a815c029))
+* **refactor:** address PR review follow-up findings ([6074fcb](https://github.com/kaitranntt/ccs/commit/6074fcb0b628c801b3a579c2673f79e829270dc1))
+* **types:** use type-only import for composite tier config ([af6aa2d](https://github.com/kaitranntt/ccs/commit/af6aa2d7b2b40f144b7e53b3f69a63e92cbb10c6))
+
+### Documentation
+
+* **cliproxy:** add normalizer API usage examples ([187c6f7](https://github.com/kaitranntt/ccs/commit/187c6f7f130d6f425dfcdd00c1a760b63c83afb4))
+
+### Code Refactoring
+
+* **core:** centralize claude paths and command parsing ([8d2ec86](https://github.com/kaitranntt/ccs/commit/8d2ec861551a68d30442a2e548e08578d511cb49))
+
+## [7.47.0](https://github.com/kaitranntt/ccs/compare/v7.46.0...v7.47.0) (2026-02-20)
+
+### Features
+
+* **quota:** add GitHub Copilot quota checks for ghcp and copilot ([8d9d498](https://github.com/kaitranntt/ccs/commit/8d9d4987dc42415ebe53760e1ac06c9c024ce17f))
+* **thinking:** complete thinking UX/DX for all providers ([c48ed2e](https://github.com/kaitranntt/ccs/commit/c48ed2ea7fe7fcf0725805274233bd5760f284d8)), closes [#583](https://github.com/kaitranntt/ccs/issues/583)
+
+### Bug Fixes
+
+* **api:** sanitize preset help text rendering ([5b12ce7](https://github.com/kaitranntt/ccs/commit/5b12ce7f0065ff19eff46f61171db20f6e1170a3))
+* **cliproxy:** add Kimi model catalog, sync, and pricing to dashboard ([3767b95](https://github.com/kaitranntt/ccs/commit/3767b95735950b506e2470a0454d4d0db7f00764)), closes [#581](https://github.com/kaitranntt/ccs/issues/581)
+* **cliproxy:** add kimi-k2 pricing and kimi catalog tests ([dd38df6](https://github.com/kaitranntt/ccs/commit/dd38df6b8d7a5367c06b14b0258a271af8545fd4))
+* **cliproxy:** address review feedback on kimi catalog ([c73a26c](https://github.com/kaitranntt/ccs/commit/c73a26c51c5340598aacf25f48fb2851bf61d5a8))
+* **cliproxy:** harden provider alias and refresh edge cases ([a71496c](https://github.com/kaitranntt/ccs/commit/a71496cc3d7db499780c2b257d74bb6cc101f450))
+* **cliproxy:** normalize codex model and provider routing ([ecc4a3f](https://github.com/kaitranntt/ccs/commit/ecc4a3fe58721b47f3c248053d06dcec8a5c2fbf))
+* **cliproxy:** warn gemini and agy users about issue 509 ([476eabe](https://github.com/kaitranntt/ccs/commit/476eabe08f06284fed3d35ed546534f9f73ef9d2))
+* **delegation:** strip CLAUDECODE env var to bypass nested session guard ([4303ee4](https://github.com/kaitranntt/ccs/commit/4303ee48c9849f6ba1cdfb420eddca4d9ae2d541)), closes [#588](https://github.com/kaitranntt/ccs/issues/588)
+* **delegation:** strip claudecode in core delegation spawn paths ([50412dc](https://github.com/kaitranntt/ccs/commit/50412dc6799921a3e536ab2fd86b011f8849e99c)), closes [#588](https://github.com/kaitranntt/ccs/issues/588)
+* **execution:** strip claudecode in remaining claude paths ([8e57d59](https://github.com/kaitranntt/ccs/commit/8e57d5947901c56ac39071dee14938551ad49c84)), closes [#588](https://github.com/kaitranntt/ccs/issues/588)
+* **profile:** close km legacy kimi compatibility gaps ([0bf00b2](https://github.com/kaitranntt/ccs/commit/0bf00b23d9085dde7fedfbed30f7924fee41da92))
+* **profile:** handle km compatibility for legacy kimi api users ([cf8070b](https://github.com/kaitranntt/ccs/commit/cf8070b5f00d8fa13f86d7324a7bfd85cfc8f78e))
+* **profiles:** reset form state on preset transitions ([14242b5](https://github.com/kaitranntt/ccs/commit/14242b568190920bd954ec9e093a9f9a2f766480))
+* **quota:** address ghcp review follow-ups ([8201204](https://github.com/kaitranntt/ccs/commit/8201204380ac5d3981d9c84a609b1c823f6696e6))
+* **spawn:** sanitize claudecode in shared claude env builders ([d25eda8](https://github.com/kaitranntt/ccs/commit/d25eda8435c72c24f16f28a84d6bfffb31b67174)), closes [#588](https://github.com/kaitranntt/ccs/issues/588)
+* **test:** pin real child_process passthrough refs ([04e4e61](https://github.com/kaitranntt/ccs/commit/04e4e61b686b50dd685917646af97b7d47e81ba1))
+* **test:** prevent child_process mock cross-test leakage ([5b164a6](https://github.com/kaitranntt/ccs/commit/5b164a64864a548192578eacd4bb149253d4be95))
+* **test:** scope child_process mock to test lifecycle ([873b7ad](https://github.com/kaitranntt/ccs/commit/873b7adb701f01d1686fab2ad98cb294c4143405))
+* **thinking:** handle clear no-op and tighten override coverage ([954baec](https://github.com/kaitranntt/ccs/commit/954baecfe429aad1c6fc4f60601b578af04ff37f))
+* **thinking:** harden codex reasoning controls across cli and dashboard ([92e2ec1](https://github.com/kaitranntt/ccs/commit/92e2ec111d08aecb55e4461fccebc93c544439eb))
+* **ui:** harden cliproxy panel and proxy edge handling ([c18adc9](https://github.com/kaitranntt/ccs/commit/c18adc90c33b45577422de4929edb9034e854941))
+* **ui:** harden provider preset/icon typing ([b317717](https://github.com/kaitranntt/ccs/commit/b3177179b11b55cb3ba0a660adade4f5898c11dd))
+* **ui:** make api profile dialog scrollable on small screens ([faa610f](https://github.com/kaitranntt/ccs/commit/faa610f843bae381aaa6553370fd1ae294a144e9))
+* **ui:** normalize ghcp quota tooltip and labels ([2c5b2af](https://github.com/kaitranntt/ccs/commit/2c5b2af55a9a7cf87716b98432c2c6d40311d860))
+* **ui:** replace stale BASE_URL references in api client ([5a78626](https://github.com/kaitranntt/ccs/commit/5a786263bc2501684593c2c1aa0b56b1d20a56ed))
+
+### Documentation
+
+* **spawn:** document claudecode env sanitization behavior ([f2ffb81](https://github.com/kaitranntt/ccs/commit/f2ffb815ab059e8f48b309ab4af05b2cde8b3215)), closes [#588](https://github.com/kaitranntt/ccs/issues/588)
+
+### Code Refactoring
+
+* **cliproxy:** address review feedback on parity and refresh flow ([39593c1](https://github.com/kaitranntt/ccs/commit/39593c161b4cbbfc6a5a125f6ef100922b73ef9b))
+* **cliproxy:** centralize provider auth capability metadata ([bd8daac](https://github.com/kaitranntt/ccs/commit/bd8daac094404bf834d77f5c4bebd9470d88c55f))
+* **cliproxy:** resolve remaining review parity and cleanup nits ([7e527af](https://github.com/kaitranntt/ccs/commit/7e527af777f1ca8ea36570f97aada469c77299ee))
+* **cliproxy:** use shared default port in management paths ([90b8d04](https://github.com/kaitranntt/ccs/commit/90b8d04d71c78b8a120ac8cd091ea0936ba5bb6f))
+* **commands:** share cliproxy default port for setup and help ([688f3e3](https://github.com/kaitranntt/ccs/commit/688f3e3889843931cde2e34fd56ec51df454b0a6))
+* **presets:** centralize shared provider preset catalog ([21d6754](https://github.com/kaitranntt/ccs/commit/21d6754ec6ae59002c2d393d41515dd105de692a))
+* **ui:** centralize default ports and add parity test ([63f4221](https://github.com/kaitranntt/ccs/commit/63f422179ed34678a8abc0f763a2a3e3525bac16))
+* **ui:** centralize provider metadata and fallbacks ([9ad8e64](https://github.com/kaitranntt/ccs/commit/9ad8e64e85458a0154c1cac7bac2e3f082f9c7ac))
+* **ui:** centralize provider metadata for setup wizard ([a53e6cb](https://github.com/kaitranntt/ccs/commit/a53e6cbd2505c2dab5c5e8fd940b75af5584d600))
+* **ui:** replace remaining hardcoded port defaults ([70116cb](https://github.com/kaitranntt/ccs/commit/70116cb3a15694532e57d370245176b905c8f375))
+* **ui:** unify api base path for cursor and copilot hooks ([feb556d](https://github.com/kaitranntt/ccs/commit/feb556dc90dab593e79aaf6145dd5b9a38eb6831))
+* **ui:** use shared default proxy port in settings cards ([5788ddc](https://github.com/kaitranntt/ccs/commit/5788ddc3b7747df898571470318d5df774603b95))
+
+### Tests
+
+* **delegation:** add regression coverage for claudecode stripping ([80a84ed](https://github.com/kaitranntt/ccs/commit/80a84edf1f7a7514dfb3fbd8c3786b0571b528bf)), closes [#588](https://github.com/kaitranntt/ccs/issues/588)
+
+## [7.46.0](https://github.com/kaitranntt/ccs/compare/v7.45.0...v7.46.0) (2026-02-17)
+
+### Features
+
+* **cliproxy:** add Kimi as OAuth CLIProxy provider ([08b2a67](https://github.com/kaitranntt/ccs/commit/08b2a6791398912ff5ea6b3cce18b37552c1ef10)), closes [#574](https://github.com/kaitranntt/ccs/issues/574)
+* **cliproxy:** expose codex weekly reset schedule in quota views ([4fc19c4](https://github.com/kaitranntt/ccs/commit/4fc19c43902330da31b49b6296082fb13e22bebf))
+* **cliproxy:** rename kimi API preset to km, add kimi to UI ([f451f4e](https://github.com/kaitranntt/ccs/commit/f451f4e4214396f59c0e8482be0be2f7376d5388))
+* **cursor:** harden daemon integration and model discovery ([c639cef](https://github.com/kaitranntt/ccs/commit/c639cefa7bd33807e96d96fd566c64a89166f22f))
+* **targets:** add multi-target CLI adapter system (Droid support) ([7d7054e](https://github.com/kaitranntt/ccs/commit/7d7054e2c096768c42fa4be1db5d111bb8e56b8a))
+* **targets:** support CCS_DROID_ALIASES argv0 mapping ([025218a](https://github.com/kaitranntt/ccs/commit/025218a706d30ca75163153293ce0920d9c3917d))
+* **ui:** add Kimi provider logo with dark background ([6961fb0](https://github.com/kaitranntt/ccs/commit/6961fb0ec35b326bb77ffea9f8828708d2a40cb7))
+
+### Bug Fixes
+
+* **cliproxy:** add kimi to wizard constants and image analysis config ([ddd5b15](https://github.com/kaitranntt/ccs/commit/ddd5b159d21efe436aa2bf82a190d3b284abe4a8))
+* **cliproxy:** log unknown codex quota window labels ([9031e5a](https://github.com/kaitranntt/ccs/commit/9031e5a085e8c1b4b58e4e871e4d98dbd48bcfc3))
+* **core:** prevent GLMT proxy leaks in child lifecycle ([53e18d4](https://github.com/kaitranntt/ccs/commit/53e18d4c8d60ed0d13a1cb034f53c5c2ef91bdad))
+* **cursor:** fallback when requested model is unavailable ([fae8716](https://github.com/kaitranntt/ccs/commit/fae87169008b704c319f78fcac958dda435985d0))
+* **cursor:** resolve review feedback and harden edge cases ([4798741](https://github.com/kaitranntt/ccs/commit/4798741a99eb60190c6ba09215f50d3bc67db6e4))
+* **targets:** close all remaining multi-target droid edge cases ([0431adf](https://github.com/kaitranntt/ccs/commit/0431adf3061388b5b984cbcbbf336a09bab85be3))
+* **targets:** DRY signal handling, remove redundant guards, harden config manager ([02af8d5](https://github.com/kaitranntt/ccs/commit/02af8d5737d9c3db4172b094b1bfae13ccdccbb1))
+* **targets:** harden adapter lifecycle and droid model edge cases ([3da3407](https://github.com/kaitranntt/ccs/commit/3da3407f9a3470f34aaf03c19d3410e5b33caa36))
+* **targets:** harden edge cases from parallel code review ([3191a4a](https://github.com/kaitranntt/ccs/commit/3191a4ab3887b79c598c31de278a45361c587a48))
+* **targets:** run cleanup before adapter launch exits ([812bb5c](https://github.com/kaitranntt/ccs/commit/812bb5c0a5b60041d1928189019cc75183ae525d))
+* **targets:** snapshot active profiles during droid prune ([15d6c06](https://github.com/kaitranntt/ccs/commit/15d6c06dbc8de72379330c43031a5660b4bc0338))
+* **test:** add kimi to provider tests, remove merge conflict marker ([0fe195c](https://github.com/kaitranntt/ccs/commit/0fe195cdc38c26b93f0f269bd384c7ef3a6c289c))
+
+### Documentation
+
+* **provider:** clarify kimi base profile endpoint ([e33164f](https://github.com/kaitranntt/ccs/commit/e33164f42e96ec6826728c47b615286bb13bfdd6))
+* **targets:** document built-in and env droid aliases ([91edc95](https://github.com/kaitranntt/ccs/commit/91edc9565bbd6bf4fe6992b0c7e2457a90a87949))
+
+### Styles
+
+* format source and test files ([539afea](https://github.com/kaitranntt/ccs/commit/539afea7374f2c931ab5cbb1e04e0845c57729b5))
+
+### Code Refactoring
+
+* **cliproxy:** DRY provider lists into single source of truth ([94b03c7](https://github.com/kaitranntt/ccs/commit/94b03c7f75fd398282a0737c497f882aeb708724))
+
+### CI
+
+* **ai-review:** switch from CLIProxy to GLM API for code reviews ([55ecbce](https://github.com/kaitranntt/ccs/commit/55ecbce3f523c034a854bc741c4c3a5b5e7851d4))
+* **ai-review:** switch from CLIProxy to GLM API for code reviews ([f81c562](https://github.com/kaitranntt/ccs/commit/f81c56204cd981e265b1ed072b887ac80114f5c3))
+
+## [7.45.0](https://github.com/kaitranntt/ccs/compare/v7.44.0...v7.45.0) (2026-02-14)
+
+### Features
+
+* **cursor-ui:** restore Cursor dashboard UX and icon assets ([7ab7a15](https://github.com/kaitranntt/ccs/commit/7ab7a156ebfb696e1d2f275b58c32115800283c2)), closes [#555](https://github.com/kaitranntt/ccs/issues/555)
+* **cursor:** sync model mapping across config and raw settings ([7b73658](https://github.com/kaitranntt/ccs/commit/7b73658f8700c7d6f3804f00df29de4c14243028)), closes [#555](https://github.com/kaitranntt/ccs/issues/555)
+
+### Bug Fixes
+
+* **cursor-settings:** remove sync fs calls in settings sync ([4f086aa](https://github.com/kaitranntt/ccs/commit/4f086aa34adb32be42527e0f3a77c4369e88df72))
+* **cursor-ui:** label cursor dashboard as beta ([b40fe86](https://github.com/kaitranntt/ccs/commit/b40fe866ec293fc08dbb877a000a87addd3ab16d))
+* **cursor-ui:** restore info card order and list scrolling ([decdffe](https://github.com/kaitranntt/ccs/commit/decdffea61f543beca508ce209b543bbeee81a4c))
+
+## [7.44.0](https://github.com/kaitranntt/ccs/compare/v7.43.0...v7.44.0) (2026-02-14)
+
+### Features
+
+* **cliproxy:** add CLI edit command for composite variants ([43e73f3](https://github.com/kaitranntt/ccs/commit/43e73f335f85f051b7294b0d9f4bdae405780a26))
+* **cliproxy:** add composite variant CLI wizard ([4926c20](https://github.com/kaitranntt/ccs/commit/4926c200f2601655e0a93f73c9dd8d03c44e12da)), closes [#506](https://github.com/kaitranntt/ccs/issues/506)
+* **cliproxy:** add composite variant runtime execution ([44b30b8](https://github.com/kaitranntt/ccs/commit/44b30b875328bf795dfc5783948f81da018c2f2e)), closes [#506](https://github.com/kaitranntt/ccs/issues/506)
+* **cliproxy:** add composite variant type definitions ([3d207fa](https://github.com/kaitranntt/ccs/commit/3d207faac5ca3389572b88eb0881b2dca040c6fb)), closes [#506](https://github.com/kaitranntt/ccs/issues/506)
+* **cliproxy:** add dashboard CRUD for composite variants ([1ebd9f4](https://github.com/kaitranntt/ccs/commit/1ebd9f43d6e5fe76f50be31458955b1a53312b25))
+* **cliproxy:** add explicit start and restart commands ([8395364](https://github.com/kaitranntt/ccs/commit/83953649704c5957a2522e3b8cf041fd2725510e))
+* **cliproxy:** add per-tier thinking config for composite variants ([ed22c1a](https://github.com/kaitranntt/ccs/commit/ed22c1aa1ec9d3c3bf6e161b31326e603e299620))
+* **cliproxy:** add provider error detection for composite fallback ([478e9e8](https://github.com/kaitranntt/ccs/commit/478e9e8f7342300ec5368c606bc7619ed497c481))
+* **cliproxy:** clarify codex effort mapping and preset UX ([945db1d](https://github.com/kaitranntt/ccs/commit/945db1d6909e546fef988f7823d60e03adcffd44))
+* **cliproxy:** extend composite schema with fallback and thinking fields ([20d6079](https://github.com/kaitranntt/ccs/commit/20d60791ffc5c805a2d2d88fc95c5e734dbcbc67)), closes [#506](https://github.com/kaitranntt/ccs/issues/506)
+* **cliproxy:** implement composite variant CRUD and settings ([c58fdc9](https://github.com/kaitranntt/ccs/commit/c58fdc931e40026322419d6353535e95308e9a8e)), closes [#506](https://github.com/kaitranntt/ccs/issues/506)
+* **cliproxy:** wire composite variant into main execution flow ([07bef9f](https://github.com/kaitranntt/ccs/commit/07bef9f50eeb3a8fe4beace38de04784f6bdda1e)), closes [#506](https://github.com/kaitranntt/ccs/issues/506)
+* **codex:** add gpt-5.3 preset defaults ([7fddb63](https://github.com/kaitranntt/ccs/commit/7fddb63ab9ffb826eee514e791ac923067938a04))
+* **codex:** keep gpt-5.2 catalog entry ([d6aa1d9](https://github.com/kaitranntt/ccs/commit/d6aa1d90a6d7722829f5cdb0d9208a22fc4ae7e3))
+* **cursor:** add auth module with SQLite auto-detect and types ([56270d9](https://github.com/kaitranntt/ccs/commit/56270d99f3511058bb71390df4c0b85f4a0e54e0)), closes [#519](https://github.com/kaitranntt/ccs/issues/519) [#517](https://github.com/kaitranntt/ccs/issues/517)
+* **cursor:** add config integration and dashboard routes ([93dafa0](https://github.com/kaitranntt/ccs/commit/93dafa04d53367653aadb6d32c59d85a0502865e))
+* **cursor:** add core protobuf encoder/decoder and executor ([9daf943](https://github.com/kaitranntt/ccs/commit/9daf9430bb76f175e34a9aa05c6060b4a959312e))
+* **cursor:** add daemon lifecycle, models catalog, and CLI commands ([aaa31c6](https://github.com/kaitranntt/ccs/commit/aaa31c64270d0e718ad82d584c8c76692e39dbf4)), closes [#520](https://github.com/kaitranntt/ccs/issues/520) [#521](https://github.com/kaitranntt/ccs/issues/521) [#522](https://github.com/kaitranntt/ccs/issues/522)
+* **cursor:** complete daemon wiring and add dedicated dashboard page ([be9d7cf](https://github.com/kaitranntt/ccs/commit/be9d7cf73e10ede766affe932881969788eadfb7))
+* **cursor:** namespace FIELD constants and implement true streaming SSE ([#531](https://github.com/kaitranntt/ccs/issues/531), [#535](https://github.com/kaitranntt/ccs/issues/535)) ([4e5b502](https://github.com/kaitranntt/ccs/commit/4e5b502fc9b2b8e576105dddb5c9d068db5b73d2))
+
+### Bug Fixes
+
+* **analytics:** stabilize responsive row alignment ([0cc1f11](https://github.com/kaitranntt/ccs/commit/0cc1f111f7032fa6685ed59161b43d60a9f39f67))
+* **cli:** add kiro auth-method flag wiring and help ([e425f47](https://github.com/kaitranntt/ccs/commit/e425f477a44fa030a8dc5a6c28bed14d9bdfd762)), closes [#552](https://github.com/kaitranntt/ccs/issues/552) [#233](https://github.com/kaitranntt/ccs/issues/233)
+* **cliproxy:** add circular fallback and empty model validation in API ([ef77607](https://github.com/kaitranntt/ccs/commit/ef77607c41cbf7e7529581071d03bea158bad44f))
+* **cliproxy:** add defensive null checks for composite tier config ([0c7dc39](https://github.com/kaitranntt/ccs/commit/0c7dc398f77806a1aa47ed73f0828f36ad88d948))
+* **cliproxy:** add session check on delete and atomic settings writes ([7486897](https://github.com/kaitranntt/ccs/commit/74868972ddbc9c4dcb689ea6a3e27a52893f6935))
+* **cliproxy:** address 3 code review issues in composite variants ([399d7e1](https://github.com/kaitranntt/ccs/commit/399d7e163a30568ae6ec8070c517c54225eb1307))
+* **cliproxy:** address 3 functional regressions in composite variants ([61f46e7](https://github.com/kaitranntt/ccs/commit/61f46e738d1935f9db5afb030e34daba2e95ac59))
+* **cliproxy:** address 4 functional regressions in composite variants ([27d22e8](https://github.com/kaitranntt/ccs/commit/27d22e836ffc83c62eefbeeb2ef29aefcb36c834))
+* **cliproxy:** address code review feedback (attempt 1/5) ([854b198](https://github.com/kaitranntt/ccs/commit/854b198b64c0feb5cfe6f7ecdf87980d18c0fda6))
+* **cliproxy:** address code review feedback (attempt 2/5) ([ac574e0](https://github.com/kaitranntt/ccs/commit/ac574e0bafaf5a7124857e7f38fe3c44f5d67a8a))
+* **cliproxy:** address code review feedback (attempt 3/5) ([6cfbdd6](https://github.com/kaitranntt/ccs/commit/6cfbdd649b6b2e1d5038c42e69f74e2c744d2bb4))
+* **cliproxy:** address code review feedback (attempt 4/5) ([4c002ca](https://github.com/kaitranntt/ccs/commit/4c002caee1d64b2b90967a67a18db8f097bbac80))
+* **cliproxy:** address lifecycle port and thinking regressions ([f02e7dc](https://github.com/kaitranntt/ccs/commit/f02e7dc5c62084fc7fb73e08d3ca667210d17317))
+* **cliproxy:** align kiro auth methods with upstream contracts ([fd46ad0](https://github.com/kaitranntt/ccs/commit/fd46ad022aae1a4d2fe6dbb8304f691465860214)), closes [#552](https://github.com/kaitranntt/ccs/issues/552) [#233](https://github.com/kaitranntt/ccs/issues/233)
+* **cliproxy:** fix edit dialog empty model and composite guidance ([8e6b67b](https://github.com/kaitranntt/ccs/commit/8e6b67bf99204f4fe187ba59e739491d4a2ab193))
+* **cliproxy:** fix thinking off regression and composite error handling ([e914fe9](https://github.com/kaitranntt/ccs/commit/e914fe977895c7d036e6cd81f48d833ac29bb9f7))
+* **cliproxy:** harden composite validation and runtime safeguards ([1a23f91](https://github.com/kaitranntt/ccs/commit/1a23f912a4629cb73d83351f6c1f4acf18f7a214))
+* **cliproxy:** harden composite variant routing and validation ([0a8adb2](https://github.com/kaitranntt/ccs/commit/0a8adb22fcdffc993b06ed577217ccb8e55253c9))
+* **cliproxy:** harden kiro device-code auth flow consistency ([826a42d](https://github.com/kaitranntt/ccs/commit/826a42d8d6c4877431474c27e14f0f1d4ec092d7))
+* **cliproxy:** improve multi-provider auth with continue-on-error pattern ([6ff17d8](https://github.com/kaitranntt/ccs/commit/6ff17d848091e1087ce2631ef2363e628346a8a2))
+* **cliproxy:** keep daemon running after parent exit ([3136f24](https://github.com/kaitranntt/ccs/commit/3136f24b9b4a879199e272cf8d1e52c919270f10))
+* **cliproxy:** keep variant updates atomic and persisted ([7bb9ceb](https://github.com/kaitranntt/ccs/commit/7bb9ceb4aff0d806ec19b3e97486a96d667834d2))
+* **cliproxy:** mark Kiro as device_code flow for dashboard auth ([6c20839](https://github.com/kaitranntt/ccs/commit/6c2083949f887a9f1a1d37bf8cc2a27c3bd650d7)), closes [#552](https://github.com/kaitranntt/ccs/issues/552)
+* **cliproxy:** resolve merge-duplicate lifecycle handlers ([9268c05](https://github.com/kaitranntt/ccs/commit/9268c05ee526e9c12b7ad33e180d3b8818443e62))
+* **cliproxy:** restore POST tier validation and guard null payloads ([a99180f](https://github.com/kaitranntt/ccs/commit/a99180fa22c83db51b3ff2f7b4dbadab0f79fbbc))
+* **cliproxy:** strip thinking suffix in detectFailedTier matching ([efd3f21](https://github.com/kaitranntt/ccs/commit/efd3f21e29dd17c287f4e569670d80c9d0f85d5a))
+* **cliproxy:** unify codex reasoning flags and thinking flow ([f9df3cf](https://github.com/kaitranntt/ccs/commit/f9df3cfa7ad5fe3668780b714edd33f17529083f))
+* **codex:** align quota display to 5h and weekly windows ([f8af5a8](https://github.com/kaitranntt/ccs/commit/f8af5a8c3cb9e2c0de09f0a1ffde942c642cdca0))
+* **codex:** infer code review cadence from reset window ([1d2ee82](https://github.com/kaitranntt/ccs/commit/1d2ee827fe38204d8d4ceb376c604abcff130836))
+* **codex:** preserve sonnet high alias on variant model updates ([3410c52](https://github.com/kaitranntt/ccs/commit/3410c52f7ed0af34428e0265b1ff510e3f3dafdf))
+* **codex:** preserve xhigh default effort for gpt-5.3 ([164d195](https://github.com/kaitranntt/ccs/commit/164d1953679392772506defc6024cf514fbbb188))
+* **codex:** reduce quota timeout flakes in dashboard ([b3d9dce](https://github.com/kaitranntt/ccs/commit/b3d9dce6e1e7b631d24bb98111a14b239074db2b))
+* **codex:** stabilize code review window labeling ([40512fe](https://github.com/kaitranntt/ccs/commit/40512fe3388e0e517838926438c8ae4559cc09d3))
+* **codex:** type cast provider in model update path ([41d9978](https://github.com/kaitranntt/ccs/commit/41d99788da96b7f59144d391d672d070e34ace00))
+* **commands:** await async command validation ([b98335c](https://github.com/kaitranntt/ccs/commit/b98335c1620bda79a3e27e5392f5e77f6bdd7f03))
+* **config:** serialize cursor section in generateYamlWithComments ([4b7de69](https://github.com/kaitranntt/ccs/commit/4b7de69d9bd330c07d834e610ca36e657a7ab2eb))
+* **cursor:** add enabled field to tests, simplify cursor routing ([f9834c8](https://github.com/kaitranntt/ccs/commit/f9834c81c947315ebe2527135e6df4bdc4da37c7))
+* **cursor:** add input validation on dashboard settings routes ([1bebf16](https://github.com/kaitranntt/ccs/commit/1bebf163575dc3f0a8a936d630714f48292655e4))
+* **cursor:** add resolve guard, port validation, and daemon tests ([7d4e6d6](https://github.com/kaitranntt/ccs/commit/7d4e6d6b65d467cf182710805b4ee15f44a4f5f0))
+* **cursor:** add response body handling and size limit ([36f0308](https://github.com/kaitranntt/ccs/commit/36f0308a72141e0481c9044a4e49b35b3065cf73))
+* **cursor:** add subcommand parity comment and raw settings TODO ([4ca4a9d](https://github.com/kaitranntt/ccs/commit/4ca4a9d2ab55eb0b339ac62e7a11d517ada1aff3))
+* **cursor:** address CI gate and review regressions ([0e55db8](https://github.com/kaitranntt/ccs/commit/0e55db88a5b92ecde8528ee8bf396ce411c93296))
+* **cursor:** address code review edge cases in protobuf and executor ([cc5a903](https://github.com/kaitranntt/ccs/commit/cc5a9039e40d952bd769b8b2dce7df9ecfd0cfa8))
+* **cursor:** address code review feedback (attempt 1/5) ([31f5741](https://github.com/kaitranntt/ccs/commit/31f574118d6c1f293dd8dc59c311079bde9b0bd1))
+* **cursor:** address code review feedback on auth module ([7e4f080](https://github.com/kaitranntt/ccs/commit/7e4f08004c00771ee624a09c045f920a5e105358))
+* **cursor:** address fourth-round review feedback for protobuf module ([c5e8241](https://github.com/kaitranntt/ccs/commit/c5e82413932f83958bb56f37aee5dc82ab5207d3))
+* **cursor:** address PR [#527](https://github.com/kaitranntt/ccs/issues/527) review feedback ([9f0ea25](https://github.com/kaitranntt/ccs/commit/9f0ea25448a8e4ca3019052812452885a4058190))
+* **cursor:** address PR [#528](https://github.com/kaitranntt/ccs/issues/528) review feedback ([d58e988](https://github.com/kaitranntt/ccs/commit/d58e98815b5ccf0aa62f9fc929f88d43b4905d8e))
+* **cursor:** address remaining LOW review items in protobuf module ([f3d532a](https://github.com/kaitranntt/ccs/commit/f3d532afd971e998ee7f72fcfc8a2940ff735ff4))
+* **cursor:** address remaining PR [#527](https://github.com/kaitranntt/ccs/issues/527) review feedback ([afb5e74](https://github.com/kaitranntt/ccs/commit/afb5e746b3c11951147c381b298bc562a078685c))
+* **cursor:** address remaining PR [#528](https://github.com/kaitranntt/ccs/issues/528) review feedback ([b8aaa58](https://github.com/kaitranntt/ccs/commit/b8aaa58d6ebf2b715fd9f53cf42ea363bbb55042))
+* **cursor:** address remaining review items in auth module ([b412ba2](https://github.com/kaitranntt/ccs/commit/b412ba2a9eb6e92630de3c4b98bb95a1375927a0)), closes [#526](https://github.com/kaitranntt/ccs/issues/526)
+* **cursor:** address second-round review feedback for auth module ([84a256d](https://github.com/kaitranntt/ccs/commit/84a256d0ac8ac2c3be6c4ffdbd422eda47f3abcc))
+* **cursor:** address second-round review feedback for protobuf module ([e177a4b](https://github.com/kaitranntt/ccs/commit/e177a4b09796cfc48a4932428449809d8ab68015)), closes [#531](https://github.com/kaitranntt/ccs/issues/531) [#531](https://github.com/kaitranntt/ccs/issues/531)
+* **cursor:** address third-round review feedback for auth module ([a8a68c9](https://github.com/kaitranntt/ccs/commit/a8a68c95992614e7c7ea1e3f65c85e29713ed746))
+* **cursor:** address third-round review feedback for protobuf module ([66a93ee](https://github.com/kaitranntt/ccs/commit/66a93ee46f26a226294cdfd25abeac78af614aff)), closes [#535](https://github.com/kaitranntt/ccs/issues/535)
+* **cursor:** align daemon routes, add enabled field, handle bare command ([6af7186](https://github.com/kaitranntt/ccs/commit/6af718626ff9db1e58a132972d08abbc3aece5bd))
+* **cursor:** clean up PID file on startDaemon failure and improve daemon robustness ([cda037e](https://github.com/kaitranntt/ccs/commit/cda037e7e5a9a77bb6bb9768e3d601008d102b70))
+* **cursor:** clean up settings validation and route consistency ([1e4cae3](https://github.com/kaitranntt/ccs/commit/1e4cae34900b307aaa7d9ddb20e624bbbf17bfb4))
+* **cursor:** close ReadableStream controller on abort to prevent consumer hangs ([36a67c4](https://github.com/kaitranntt/ccs/commit/36a67c48377a0fbd325d2ed9a267de5c5357b52f))
+* **cursor:** export missing symbols, eliminate subcommand sync risk, improve tests ([9342387](https://github.com/kaitranntt/ccs/commit/934238740e124f6b89d04f571fe201153dbf85af))
+* **cursor:** fix router fall-through, add daemon marker, use random test port ([bfc9361](https://github.com/kaitranntt/ccs/commit/bfc9361701376b0a2d5541f2c8e48e95e2637539))
+* **cursor:** fix test isolation and daemon exit handling ([fe97d72](https://github.com/kaitranntt/ccs/commit/fe97d720d41f83a35acf90307ef4471fb02a4cc6))
+* **cursor:** guard raw-settings save race and enforce daemon preconditions ([9a76f86](https://github.com/kaitranntt/ccs/commit/9a76f866b09bfb7b864da236011658046f24f150))
+* **cursor:** harden auth security and add token expiry warning ([aeb5802](https://github.com/kaitranntt/ccs/commit/aeb580281fc4b9f0d585a99e95730e65bd6fae6f))
+* **cursor:** harden stopDaemon PID validation, tighten regex, add lifecycle test ([760a5c3](https://github.com/kaitranntt/ccs/commit/760a5c3ca4fb10f408ddafc2bcd9a1c20e805e23))
+* **cursor:** kill orphaned daemon on timeout and fix exit codes ([88ad13e](https://github.com/kaitranntt/ccs/commit/88ad13ee7ba7957a6d1756e994b707d6f7402e2a))
+* **cursor:** pass all args to handler, use getCursorConfig in routes ([d7e0d1c](https://github.com/kaitranntt/ccs/commit/d7e0d1cacff827ee1cd0015cbf8143e0a5346680))
+* **cursor:** save credentials after auto-detect and fix signal hang ([9f9db7d](https://github.com/kaitranntt/ccs/commit/9f9db7dcea29f8ed0e2b8d52dc8ade81f8ab050d))
+* **cursor:** show auto-detect error message, add subcommand sync comment ([887efa4](https://github.com/kaitranntt/ccs/commit/887efa406957bb88f0dfdfe12732b1ac0e1cfae1))
+* **cursor:** split daemon helpers to satisfy maintainability gate ([08a3e0b](https://github.com/kaitranntt/ccs/commit/08a3e0bae68aeefdb9e5cfaf4cb879363b16e056))
+* **cursor:** tighten rate limit detection string matching ([79ba1de](https://github.com/kaitranntt/ccs/commit/79ba1de4e237f126a65b981660755a0845925ce9))
+* **cursor:** use getCursorConfig(), fix help text and stub messages ([2ba826b](https://github.com/kaitranntt/ccs/commit/2ba826bb722c75bc773dd132095d6a42abb36691))
+* **cursor:** use process.execPath and add safeResolve to model fetcher ([9478967](https://github.com/kaitranntt/ccs/commit/94789676b9642d539e9365fc03a961691981ed12))
+* **cursor:** use stdio ignore, sequential polling, move CursorConfig to types ([ce19153](https://github.com/kaitranntt/ccs/commit/ce1915366d5012097b5b6814c2c672d04f16ab61))
+* **cursor:** validate fetch status before streaming fallback and register abort early ([27badb2](https://github.com/kaitranntt/ccs/commit/27badb2584a9131b9408dacc1f58417745968dbe))
+* **cursor:** validate request body on settings endpoints ([f5a912b](https://github.com/kaitranntt/ccs/commit/f5a912b114107bdc26fdcacb936ac6bf4d9f50c5))
+* **format:** align image analysis check with pinned prettier ([ae83be1](https://github.com/kaitranntt/ccs/commit/ae83be159052e064ab639db2bde140326d42769f))
+* **hardening:** count executable sync fs call sites ([d21b5c4](https://github.com/kaitranntt/ccs/commit/d21b5c44ee736a4fea6473a32071d289fa43202e))
+* **hardening:** handle regex literals after else/do ([65a1d8a](https://github.com/kaitranntt/ccs/commit/65a1d8ae2cd2027eb6e6992daf15466a000c48d2))
+* **hardening:** handle regex literals in sync-call scanner ([bb9d846](https://github.com/kaitranntt/ccs/commit/bb9d846a549642c8b90de96a8f2377546dc2d11c))
+* **hardening:** ignore literal text in sync-call metrics ([8193e9d](https://github.com/kaitranntt/ccs/commit/8193e9d67fef073c221f470559faa5b19db65056))
+* **maintainability:** enforce gate and correct loc metric ([2610971](https://github.com/kaitranntt/ccs/commit/2610971d2e023af24c3364d94fc1a7be7e00843f))
+* **maintainability:** harden tracked scan and baseline checks ([33e9a88](https://github.com/kaitranntt/ccs/commit/33e9a8849420b2cdf68f1ddd5ef93d22fafc50f7))
+* **maintainability:** require git-tracked scan for gate ([b7481cf](https://github.com/kaitranntt/ccs/commit/b7481cf346c80fc3b178cb7c60c9459865a52f8c))
+* **maintainability:** scan tracked src files for stable gate ([8f0ba48](https://github.com/kaitranntt/ccs/commit/8f0ba481edf22fd87da1ad44e4eea2c257695d75))
+* **test:** avoid global ui mock leakage in shell completion tests ([851f870](https://github.com/kaitranntt/ccs/commit/851f870fa8cce523205f547712ad5596e96bf3d6))
+* **ui:** add method-aware kiro auth flow parity ([6a21f39](https://github.com/kaitranntt/ccs/commit/6a21f3921b618ba61949cf1eeccc2251dd3f6719)), closes [#552](https://github.com/kaitranntt/ccs/issues/552) [#233](https://github.com/kaitranntt/ccs/issues/233)
+* **ui:** add trim validation for composite tier model fields ([b6e1d0c](https://github.com/kaitranntt/ccs/commit/b6e1d0c4810581bd5a4e68b990601ac3c1f90cc8))
+* **ui:** fix TypeScript error in composite edit dialog tier mapping ([240dfe2](https://github.com/kaitranntt/ccs/commit/240dfe29cf2aefead7850c03b5da592d3ebd04b0))
+* **ui:** use default tier provider instead of hardcoded 'gemini' ([f3618c5](https://github.com/kaitranntt/ccs/commit/f3618c51d77512993dbe6a587c03db18d799cc32))
+* **ui:** use type-only import for KiroAuthMethod ([e3f0860](https://github.com/kaitranntt/ccs/commit/e3f0860750e9213572727b8c3f5deb3c57615937))
+* **web-server:** make kiro auth routes method-aware ([577991c](https://github.com/kaitranntt/ccs/commit/577991c282fb3646f42d5c657c94dd5c07f6b4e3)), closes [#552](https://github.com/kaitranntt/ccs/issues/552) [#233](https://github.com/kaitranntt/ccs/issues/233)
+
+### Documentation
+
+* **guidelines:** add AGENTS symlink and neutral wording ([fca5ca2](https://github.com/kaitranntt/ccs/commit/fca5ca203f03d918ae3557754715a535a9ea85c4))
+* **kiro:** document method-aware auth behavior ([14dd341](https://github.com/kaitranntt/ccs/commit/14dd34187d94fc07419175c17cd893e3f0081537)), closes [#552](https://github.com/kaitranntt/ccs/issues/552) [#233](https://github.com/kaitranntt/ccs/issues/233)
+
+### Code Refactoring
+
+* **cliproxy:** centralize provider capability registry ([924e368](https://github.com/kaitranntt/ccs/commit/924e3686c8741986def8474d079cc60ea13eee29))
+* **commands:** add command contract and migrate shell completion ([fc4b77b](https://github.com/kaitranntt/ccs/commit/fc4b77bc520da688af6e26add33fc7b25ff4d5c0))
+
+### Tests
+
+* **cliproxy:** add composite variant v2 unit tests ([e0ae5f2](https://github.com/kaitranntt/ccs/commit/e0ae5f20ff60fb8c94788a04b9c63ddb4b01b884))
+* **cliproxy:** add regression coverage for update consistency ([7dd4ce5](https://github.com/kaitranntt/ccs/commit/7dd4ce5453b7e22ff1d378f396e4f8d61300a543))
+* **cliproxy:** add thinking suffix test and document exit 0 behavior ([c35de7e](https://github.com/kaitranntt/ccs/commit/c35de7ec9ab1eac166fc1a74bb9da3be61975ee8))
+* **cliproxy:** stabilize path-sensitive CI test assertions ([c9faf6c](https://github.com/kaitranntt/ccs/commit/c9faf6cdc9d5e34b1e69ed055b4e845657444c87))
+* **cliproxy:** stabilize thinking override assertion ([d28fb2c](https://github.com/kaitranntt/ccs/commit/d28fb2cdbd9d585f2d045fb0a64f9ec41ab5776b))
+* use getCcsDir() instead of os.homedir() for test isolation ([ca7bb23](https://github.com/kaitranntt/ccs/commit/ca7bb23970ba66c9b5f7ce68e96700bca8303656))
+
+## [7.43.0](https://github.com/kaitranntt/ccs/compare/v7.42.0...v7.43.0) (2026-02-11)
+
+### Features
+
+* **cliproxy:** add account safety guards to prevent Google account bans ([#516](https://github.com/kaitranntt/ccs/issues/516)) ([e055dac](https://github.com/kaitranntt/ccs/commit/e055dac1996bd3cd3c4e5ee0f11dad22d8d2a838)), closes [#509](https://github.com/kaitranntt/ccs/issues/509) [#512](https://github.com/kaitranntt/ccs/issues/512)
+* **cliproxy:** runtime quota monitoring during active sessions ([#529](https://github.com/kaitranntt/ccs/issues/529)) ([c6c94a0](https://github.com/kaitranntt/ccs/commit/c6c94a0c1e7bf82dd56295a76d833d7d52694718)), closes [#524](https://github.com/kaitranntt/ccs/issues/524)
+* **glm:** update default model to GLM-5 and fix all GLM pricing ([3e26dee](https://github.com/kaitranntt/ccs/commit/3e26dee0134fa576a57f216f232a0215084e74a3)), closes [#532](https://github.com/kaitranntt/ccs/issues/532)
+
+### Bug Fixes
+
+* **cliproxy:** add fork:true for Claude model aliases in config generator ([#523](https://github.com/kaitranntt/ccs/issues/523)) ([4065399](https://github.com/kaitranntt/ccs/commit/4065399d8aa46ccdb115081e461c5651d0afaa2e)), closes [#522](https://github.com/kaitranntt/ccs/issues/522)
+* **cliproxy:** address all review feedback (Low + informational) ([7d049d8](https://github.com/kaitranntt/ccs/commit/7d049d8f1e8655856a1a9636d21f6eb3992752a0))
+* **cliproxy:** mask email in ban detection and fix JSDoc default ([fcc605b](https://github.com/kaitranntt/ccs/commit/fcc605bc1f02af4da518d21c10f8c77b38a793ad))
+* **cliproxy:** migrate deprecated gemini-claude-* model names to upstream claude-* names ([#515](https://github.com/kaitranntt/ccs/issues/515)) ([6afbb72](https://github.com/kaitranntt/ccs/commit/6afbb72b472029358fc3d9b2fed488fd4779695b)), closes [#513](https://github.com/kaitranntt/ccs/issues/513)
+* **glm:** fix missed help text reference and glm-4.5-air pricing ([7d9c538](https://github.com/kaitranntt/ccs/commit/7d9c538248f93089ae6483af4ea1d01e555e2e20))
+* **hooks:** isolate image type check before error-prone processing ([#514](https://github.com/kaitranntt/ccs/issues/514)) ([19de427](https://github.com/kaitranntt/ccs/commit/19de42704f683a29134982dfb643e97c3123bf7c)), closes [#511](https://github.com/kaitranntt/ccs/issues/511)
+
+## [7.42.0](https://github.com/kaitranntt/ccs/compare/v7.41.0...v7.42.0) (2026-02-11)
+
+### Features
+
+* account safety, quota monitoring, and stability fixes ([#530](https://github.com/kaitranntt/ccs/issues/530)) ([0518050](https://github.com/kaitranntt/ccs/commit/051805074eb80db839a4deb8ab1dcb89f29766de)), closes [#515](https://github.com/kaitranntt/ccs/issues/515) [#513](https://github.com/kaitranntt/ccs/issues/513) [#514](https://github.com/kaitranntt/ccs/issues/514) [#511](https://github.com/kaitranntt/ccs/issues/511) [#523](https://github.com/kaitranntt/ccs/issues/523) [#522](https://github.com/kaitranntt/ccs/issues/522) [#516](https://github.com/kaitranntt/ccs/issues/516) [#509](https://github.com/kaitranntt/ccs/issues/509) [#512](https://github.com/kaitranntt/ccs/issues/512) [#529](https://github.com/kaitranntt/ccs/issues/529) [#524](https://github.com/kaitranntt/ccs/issues/524)
+
+## [7.41.0](https://github.com/kaitranntt/ccs/compare/v7.40.0...v7.41.0) (2026-02-11)
+
+### Features
+
+* **config:** add CCS_DIR env var and --config-dir flag for config directory override ([7a0e6a4](https://github.com/kaitranntt/ccs/commit/7a0e6a4112b50dad14bf48004b07a77d1a5fd4d8)), closes [#507](https://github.com/kaitranntt/ccs/issues/507)
+* **env:** add ccs env command for third-party tool integration ([2e85064](https://github.com/kaitranntt/ccs/commit/2e85064b8a6a3eed694abb56bef70bf889f648d3)), closes [#503](https://github.com/kaitranntt/ccs/issues/503)
+* update cliproxy, config loader, glmt transformer, and provider routes ([8c6afe2](https://github.com/kaitranntt/ccs/commit/8c6afe2e73049ecfbb12cb29a894e83eb2576354))
+
+### Bug Fixes
+
+* **cliproxy:** prevent OAuth process hang on Qwen device code flow ([086bf95](https://github.com/kaitranntt/ccs/commit/086bf958e9c6c9d6d745e78a29a95a9a58490bf1)), closes [#314](https://github.com/kaitranntt/ccs/issues/314)
+* **cliproxy:** strip Gemini-unsupported schema fields including "examples" ([505d6d0](https://github.com/kaitranntt/ccs/commit/505d6d0f111b11e4e231742d65d2a3bbfb73864a)), closes [#155](https://github.com/kaitranntt/ccs/issues/155)
+* **config:** dynamic health message, cache getters, static imports, cloud hint ([706cca8](https://github.com/kaitranntt/ccs/commit/706cca8b3e57c1f9e6c559dc4c1a18ed6854a96d))
+* **config:** lazy-evaluate paths, fix TOCTOU, segment-boundary cloud detection ([d5abc7d](https://github.com/kaitranntt/ccs/commit/d5abc7d69170132cc5c604c453e45f54fa2973b6))
+* **config:** migrate all hardcoded paths to getCcsDir() and improve validation ([60d6bbd](https://github.com/kaitranntt/ccs/commit/60d6bbd0271a4bad4df1eaa705c11d34f7abd464))
+* **config:** resolve remaining hardcoded paths and improve readability ([c8800b4](https://github.com/kaitranntt/ccs/commit/c8800b418a8ee2143366a2e199c42384ff5693f4))
+* **delegation:** use exitCode instead of killed for process termination checks ([4b1fcac](https://github.com/kaitranntt/ccs/commit/4b1fcacf307e0bb8935495202f0322210eb395ea))
+* **env:** add key sanitization and shell completions ([76457a5](https://github.com/kaitranntt/ccs/commit/76457a567d7d1fe52a983a3c6e37b49d503071c9))
+* **env:** add missing CLIProxy profiles to bash completion and shell validation ([6d9351d](https://github.com/kaitranntt/ccs/commit/6d9351dcbc1baa4135d75361301e36cafc3556a3))
+* **env:** address all PR review feedback ([44b3152](https://github.com/kaitranntt/ccs/commit/44b3152d347a7f0c96af4e2e4cd8027ea30634fc))
+* **env:** address P1-P3 review items from code review ([3f5ecd4](https://github.com/kaitranntt/ccs/commit/3f5ecd4d6963a25ce909cd7e17fcca610d9dc978))
+* **env:** fix fish escaping, profile parsing, and add OPENAI_MODEL mapping ([d5c03d1](https://github.com/kaitranntt/ccs/commit/d5c03d1f2d2ad600b4106a9a2fb38a028d099338))
+* **env:** improve empty profile UX and consolidate shell validation constants ([b96eacf](https://github.com/kaitranntt/ccs/commit/b96eacfc06a97e89796620c1ea675aaac290e427))
+* **env:** sync CLIProxy profiles across all shell completions and improve error messages ([a98f4a5](https://github.com/kaitranntt/ccs/commit/a98f4a54278f9f8d9e4b30ccccc900514c08b32f))
+* **env:** use single quotes to prevent shell injection via eval ([a5dc15d](https://github.com/kaitranntt/ccs/commit/a5dc15d174dec2e39b251d63bc4a4093003fc0cb))
+* separate type-only exports and migrate test imports from dist/ to src/ ([0483444](https://github.com/kaitranntt/ccs/commit/048344486456bd561c03a1441060bfc4ca650655))
+
+### Documentation
+
+* update local docs for ccs env command ([38bd562](https://github.com/kaitranntt/ccs/commit/38bd562687865c2cb523734509143390f83a5dcc))
+
+### Code Refactoring
+
+* **config:** DRY precedence logic, dynamic recovery messages, CCS_HOME cloud warning ([9699e01](https://github.com/kaitranntt/ccs/commit/9699e01725c3b33ca1bf24a4eeea7ec7f7e9c220))
+* **utils:** extract killWithEscalation to shared process-utils ([90b4627](https://github.com/kaitranntt/ccs/commit/90b4627740ae90374b06e0013c09bd583e1ddb39))
+
+### Tests
+
+* **cliproxy:** add edge case coverage for Gemini schema sanitizer ([917f0bb](https://github.com/kaitranntt/ccs/commit/917f0bbef7b7132dca0c37e474a82a9bb07f0df1))
+* **utils:** add unit tests for killWithEscalation ([dc9b276](https://github.com/kaitranntt/ccs/commit/dc9b27623bd3cd92dd1b556329d20fd62043b37b))
+
+## [7.40.0](https://github.com/kaitranntt/ccs/compare/v7.39.0...v7.40.0) (2026-02-07)
+
+### Features
+
+* **cliproxy:** add hybrid catalog sync with CLIProxyAPI ([#485](https://github.com/kaitranntt/ccs/issues/485)) ([c8a0995](https://github.com/kaitranntt/ccs/commit/c8a099509a878f24a211f01ee0000f01020c4d6b)), closes [#477](https://github.com/kaitranntt/ccs/issues/477)
+* **cliproxy:** delegate kiro/ghcp token refresh to CLIProxyAPIPlus ([#488](https://github.com/kaitranntt/ccs/issues/488)) ([215c00e](https://github.com/kaitranntt/ccs/commit/215c00e9830e4a604231dd64c01154c91574ace9)), closes [#487](https://github.com/kaitranntt/ccs/issues/487)
+
+### Bug Fixes
+
+* **cliproxy:** disable 1M extended context for opus 4.6 (256k limit) ([#492](https://github.com/kaitranntt/ccs/issues/492)) ([43cd19a](https://github.com/kaitranntt/ccs/commit/43cd19a52b128363c7202590869fb4bd9349b859)), closes [#490](https://github.com/kaitranntt/ccs/issues/490)
+* **cliproxy:** guard against empty upstream SSE responses in agy profile ([#489](https://github.com/kaitranntt/ccs/issues/489)) ([545c8b9](https://github.com/kaitranntt/ccs/commit/545c8b9515d5afeda17976f418e22037cc9acef9)), closes [#350](https://github.com/kaitranntt/ccs/issues/350)
+* **hooks:** add image analysis env vars for settings-based profiles ([#484](https://github.com/kaitranntt/ccs/issues/484)) ([b0dff7a](https://github.com/kaitranntt/ccs/commit/b0dff7a148c795994c2e3f871db9f60dd1cc737a)), closes [#440](https://github.com/kaitranntt/ccs/issues/440)
+* **teams:** propagate CLAUDE_CONFIG_DIR to tmux session for agent teammates ([db88290](https://github.com/kaitranntt/ccs/commit/db88290b9110ba78f484d707ae3e64521db4e622))
+
+### Code Refactoring
+
+* **cliproxy:** check lifecycle events in remaining SSE buffer ([42a3eb1](https://github.com/kaitranntt/ccs/commit/42a3eb150630b3a466b7ec9063a2256ecc38c60e))
+* **cliproxy:** deduplicate message_delta/message_stop in synthetic SSE response ([152f543](https://github.com/kaitranntt/ccs/commit/152f5432ae26e42e07ea422b882298033ed66c7f)), closes [#491](https://github.com/kaitranntt/ccs/issues/491)
+* **cliproxy:** extract SSE lifecycle tracker and add backpressure handling ([1b3440b](https://github.com/kaitranntt/ccs/commit/1b3440b93962e347797105b9bf92c2aaeb954a27))
+* **teams:** use spawnSync array args instead of execSync string ([0f7d5f9](https://github.com/kaitranntt/ccs/commit/0f7d5f97576d68b9c73ea952a4ea5853b0993467))
+
+## [7.39.0](https://github.com/kaitranntt/ccs/compare/v7.38.0...v7.39.0) (2026-02-07)
+
+### Features
+
+* hybrid CLIProxy catalog sync + agent teams env fix ([#486](https://github.com/kaitranntt/ccs/issues/486)) ([0b39493](https://github.com/kaitranntt/ccs/commit/0b394933aec723f77a552b7d951afaf065399a92)), closes [#485](https://github.com/kaitranntt/ccs/issues/485) [#477](https://github.com/kaitranntt/ccs/issues/477)
+
+## [7.38.0](https://github.com/kaitranntt/ccs/compare/v7.37.1...v7.38.0) (2026-02-07)
+
+### Features
+
+* **release:** v7.38.0 - Extended Context, Qwen Models, Bug Fixes ([#480](https://github.com/kaitranntt/ccs/issues/480)) ([b454834](https://github.com/kaitranntt/ccs/commit/b4548341750804339c87c48259dd8741425d2acf)), closes [#472](https://github.com/kaitranntt/ccs/issues/472) [#474](https://github.com/kaitranntt/ccs/issues/474) [#103](https://github.com/kaitranntt/ccs/issues/103) [#478](https://github.com/kaitranntt/ccs/issues/478) [#482](https://github.com/kaitranntt/ccs/issues/482)
+
+## [7.37.1](https://github.com/kaitranntt/ccs/compare/v7.37.0...v7.37.1) (2026-02-05)
+
+### Bug Fixes
+
+* **cliproxy:** fix discoverExistingAccounts test failures ([759f289](https://github.com/kaitranntt/ccs/commit/759f28911958689ff2b56f03409545b6fec81dec))
+* **ui:** display device code for GitHub Copilot OAuth in Dashboard ([13f6c3f](https://github.com/kaitranntt/ccs/commit/13f6c3f14bd0d1c920e339b2486dcd6e37ce50f4)), closes [#460](https://github.com/kaitranntt/ccs/issues/460)
+
+### Code Refactoring
+
+* **cliproxy:** modularize top 4 giant files ([b149e25](https://github.com/kaitranntt/ccs/commit/b149e252ebe3fc355e3e47772de4820810b8000f))
+* **ui:** address PR review feedback for device code auth ([a08d0cf](https://github.com/kaitranntt/ccs/commit/a08d0cfece85ebb8c5960ad66ee48131af6ded05))
+
+## [7.37.0](https://github.com/kaitranntt/ccs/compare/v7.36.0...v7.37.0) (2026-02-05)
+
+### Features
+
+* **oauth:** add interactive mode prompt for VPS/headless environments ([7a1b4d6](https://github.com/kaitranntt/ccs/commit/7a1b4d6f20176957892e217979062ba542e90343)), closes [#461](https://github.com/kaitranntt/ccs/issues/461)
+* **oauth:** add interactive mode prompt for VPS/headless environments ([#462](https://github.com/kaitranntt/ccs/issues/462)) ([2777202](https://github.com/kaitranntt/ccs/commit/2777202caa37db8c48f116ad256a3c183bb7eb1c)), closes [#461](https://github.com/kaitranntt/ccs/issues/461)
+
+### Bug Fixes
+
+* **auth:** show command checks unified config for accounts ([0e140f8](https://github.com/kaitranntt/ccs/commit/0e140f83e40e1f21b3c52504e85639c90435e61e)), closes [#458](https://github.com/kaitranntt/ccs/issues/458)
+* **cliproxy:** add NO_PROXY support and error handling for proxy URLs ([bcde5f4](https://github.com/kaitranntt/ccs/commit/bcde5f4878731d45f4867d52300dcca623e0915f))
+* **cliproxy:** respect http_proxy env vars for binary downloads ([9c527b7](https://github.com/kaitranntt/ccs/commit/9c527b7d1501deb9aefff6ab95debb18adee87f0)), closes [#266](https://github.com/kaitranntt/ccs/issues/266)
+* **cliproxy:** sanitize MCP tool input_schema to remove non-standard properties ([#459](https://github.com/kaitranntt/ccs/issues/459)) ([f8c179f](https://github.com/kaitranntt/ccs/commit/f8c179f6da47f6a0d0cb65fe3be12ea44a05bdef)), closes [#456](https://github.com/kaitranntt/ccs/issues/456)
+* **dashboard:** delete accounts from unified config mode ([8d5f7d2](https://github.com/kaitranntt/ccs/commit/8d5f7d2d8365bc8b02d3c0b72c4945673580b090)), closes [#455](https://github.com/kaitranntt/ccs/issues/455)
+* **doctor:** use cmd.exe compatible quoting for Windows shell execution ([ff92c66](https://github.com/kaitranntt/ccs/commit/ff92c66b64cb902e6faf9cc54f2973a96d29173a))
+* **shell:** escape ! for cmd.exe delayed expansion ([61bc54a](https://github.com/kaitranntt/ccs/commit/61bc54af0504d21bdf1e6a7e29dcf9ef322b89c7))
+* **shell:** escape cmd.exe special chars (%, ^, newlines) ([ed91f21](https://github.com/kaitranntt/ccs/commit/ed91f21994a3aa35a9e40539015676466b794144))
+* **ui:** allow backend switching in remote mode ([28e776d](https://github.com/kaitranntt/ccs/commit/28e776d58e7b738a7fbedacb5385c0c423196cea)), closes [#463](https://github.com/kaitranntt/ccs/issues/463)
+
+### Tests
+
+* **cliproxy:** add comprehensive proxy support unit tests ([713ee93](https://github.com/kaitranntt/ccs/commit/713ee936065d6b1f7f61a9aa07282c5f82d81774))
+* **shell:** add unit tests for escapeShellArg ([48aa3cc](https://github.com/kaitranntt/ccs/commit/48aa3cca30b2c5e7ff0b5faff865918759b048d1))
+
+## [7.36.0](https://github.com/kaitranntt/ccs/compare/v7.35.1...v7.36.0) (2026-02-04)
+
+### Features
+
+* **detector:** add Windows native installer fallback detection ([3336736](https://github.com/kaitranntt/ccs/commit/333673615465727d2b25fef7a35203424859584d)), closes [#447](https://github.com/kaitranntt/ccs/issues/447)
+
+### Bug Fixes
+
+* **detector:** use expandPath helper and add tests ([7f83a7d](https://github.com/kaitranntt/ccs/commit/7f83a7d43574e12ae3685caa0f6cf682ea9631ca)), closes [#449](https://github.com/kaitranntt/ccs/issues/449) [#447](https://github.com/kaitranntt/ccs/issues/447)
+* **hooks:** deduplicate WebSearch hooks when saving via Dashboard ([57d4b04](https://github.com/kaitranntt/ccs/commit/57d4b04c682aac6246d2678a8104ed64e3bbd39a)), closes [#450](https://github.com/kaitranntt/ccs/issues/450)
+* **ui:** prevent settings tab truncation with grid layout ([bfb2a06](https://github.com/kaitranntt/ccs/commit/bfb2a062682be3bfb4a03d3a2e0b534829a37899))
+
+### Tests
+
+* add stress test and PostToolUse preservation tests ([2fe6c33](https://github.com/kaitranntt/ccs/commit/2fe6c336d71cd36e7983603491601307a5f674e7)), closes [#452](https://github.com/kaitranntt/ccs/issues/452)
+* **glmt:** increase timeout for retry-logic tests on CI ([aa83b4d](https://github.com/kaitranntt/ccs/commit/aa83b4db4e00296bd02ff1699ee7782d291f012a))
+* **uploader:** fix flaky timeout test with 5ms tolerance ([36c5605](https://github.com/kaitranntt/ccs/commit/36c560532331a6d12ec0d52e7f559004f241beea))
+
+## [7.35.1](https://github.com/kaitranntt/ccs/compare/v7.35.0...v7.35.1) (2026-02-04)
+
+### Bug Fixes
+
+* **cliproxy:** use os.homedir() for cross-platform path expansion ([39f77bd](https://github.com/kaitranntt/ccs/commit/39f77bd9efffd97fb76fbb7bb550bfe25c58e6a7)), closes [#445](https://github.com/kaitranntt/ccs/issues/445)
+
+## [7.35.0](https://github.com/kaitranntt/ccs/compare/v7.34.1...v7.35.0) (2026-02-04)
+
+### ⚠ BREAKING CHANGES
+
+* **hooks:** config.yaml image_analysis section now uses
+provider_models instead of providers/model fields.
+
+Provider-to-model mappings:
+- agy → gemini-2.5-flash
+- gemini → gemini-2.5-flash
+- codex → gpt-5.1-codex-mini
+- kiro → kiro-claude-haiku-4-5
+- ghcp → claude-haiku-4.5
+- claude → claude-haiku-4-5-20251001
+
+Hook checks CCS_CURRENT_PROVIDER against provider_models and skips
+if no vision model configured for that provider.
+
+### Features
+
+* **hooks:** add ANTHROPIC_MODEL fallback for image analysis ([ae3eb28](https://github.com/kaitranntt/ccs/commit/ae3eb282b4a6a0754f90be27e259af45d0d09d9b))
+* **hooks:** add block-image-read hook to prevent context overflow ([38eb740](https://github.com/kaitranntt/ccs/commit/38eb74043c7f9e613e308392b2c159ebfc2a05c1)), closes [#426](https://github.com/kaitranntt/ccs/issues/426)
+* **hooks:** add image/PDF analysis via CLIProxy transformer ([d5f2aca](https://github.com/kaitranntt/ccs/commit/d5f2acaa6e9ee5d12a6035c2da1f975551b6a989)), closes [#426](https://github.com/kaitranntt/ccs/issues/426)
+* **hooks:** add UX improvements for image analysis hook ([2b0717e](https://github.com/kaitranntt/ccs/commit/2b0717ed53011dcb67cc03ad09a00cfabb682f1e))
+* **hooks:** extend image analyzer to all CLIProxy providers ([3252228](https://github.com/kaitranntt/ccs/commit/3252228e5c230d291fc705fb5f1f4b3f58cb2d99))
+* **hooks:** inject image analyzer hooks into all profile types ([a8ddf8b](https://github.com/kaitranntt/ccs/commit/a8ddf8bd565ac82131dc4ca02ecadd3b04a61197))
+* **hooks:** skip image analyzer for Claude Sub accounts ([26f4021](https://github.com/kaitranntt/ccs/commit/26f40217703800cb412af74195e350090d39e435))
+* **ui:** improve settings page UX and responsiveness ([4d87a64](https://github.com/kaitranntt/ccs/commit/4d87a649de3873786926dad0f598d4f481b1b563))
+
+### Bug Fixes
+
+* **backup:** create backups only when settings content changes ([c324e92](https://github.com/kaitranntt/ccs/commit/c324e92eb442669656b53a8f685030f5cb15ce3d)), closes [#433](https://github.com/kaitranntt/ccs/issues/433)
+* **checks:** use configurable CLIProxy port in health check ([bfb5350](https://github.com/kaitranntt/ccs/commit/bfb535037ad297b3d838754af74d30b8a88b34f2))
+* **cli:** improve network handling and shell escaping ([3c1cf91](https://github.com/kaitranntt/ccs/commit/3c1cf91da4a27e55578a975f02222120a5d3064c))
+* **config:** remove unused forceReload parameter in showStatus ([8dfd9e9](https://github.com/kaitranntt/ccs/commit/8dfd9e937599305dcdeab453bb866f16ad582020))
+* **delegation:** dynamic model display from settings ([f6b7045](https://github.com/kaitranntt/ccs/commit/f6b7045023e5de52f57fa79445a29de5bfe5a5ff)), closes [#431](https://github.com/kaitranntt/ccs/issues/431)
+* **glmt:** gate retry rate limit logs behind verbose flag ([73824bc](https://github.com/kaitranntt/ccs/commit/73824bc99eec2701164837588a231b56b943c536))
+* **hooks:** add defensive validation for env var generation ([9662490](https://github.com/kaitranntt/ccs/commit/9662490a74297fe1c992e30beb212222abe77799))
+* **hooks:** add edge case validation in image analyzer ([0e7b9c9](https://github.com/kaitranntt/ccs/commit/0e7b9c91900c319a58ec698306be01bb1f665432))
+* **hooks:** add network errors to noRetryPatterns, update E2E test ([1201b4b](https://github.com/kaitranntt/ccs/commit/1201b4bb4b0b207d1c170fc3dcf39e79bbc545bd))
+* **hooks:** enable image-read blocking by default for third-party profiles ([9f3edc5](https://github.com/kaitranntt/ccs/commit/9f3edc5dafb3aeb72f3d1cf2da80ccbda1690e48))
+* **hooks:** improve error handling and edge cases for image analysis ([cb8de2c](https://github.com/kaitranntt/ccs/commit/cb8de2c8e8da2ac5e97b8e1893fc4586d0bf5c8c))
+* **hooks:** improve image analysis output format ([70caaa0](https://github.com/kaitranntt/ccs/commit/70caaa00a090fe6a1cfcff3ff47bcb355427ff42))
+* **ui:** add missing animate property to connection indicator ([57f7a70](https://github.com/kaitranntt/ccs/commit/57f7a70d67cb7bc854fa3aa4c0a932134dc1278c))
+* **update:** pre-remove package on Windows bun before reinstall ([a55e0af](https://github.com/kaitranntt/ccs/commit/a55e0af8ef440d2cbfa7d9a487727fb1ee874bc6)), closes [#435](https://github.com/kaitranntt/ccs/issues/435)
+
+### Documentation
+
+* update documentation for v7.34 release ([c6be09b](https://github.com/kaitranntt/ccs/commit/c6be09b55b9df21be551f4844b4fba3dfd9a6b3f))
+
+### Code Refactoring
+
+* **hooks:** consolidate getCcsHooksDir to config-manager ([b014c4e](https://github.com/kaitranntt/ccs/commit/b014c4e8725c484d37827ea6f2a2e5df59464ce8))
+* **hooks:** deprecate block-image-read, add CLIProxy fallback ([51b719e](https://github.com/kaitranntt/ccs/commit/51b719ef3463950983244d708f1b9bca45774976)), closes [#442](https://github.com/kaitranntt/ccs/issues/442) [#426](https://github.com/kaitranntt/ccs/issues/426)
+* **hooks:** use provider_models mapping for image analysis ([40caff1](https://github.com/kaitranntt/ccs/commit/40caff13ad5e8eaca71bddb05368d2218ce94453))
+
+### Performance Improvements
+
+* **config:** replace busy-wait with Atomics.wait in lock retry ([ec4e1ae](https://github.com/kaitranntt/ccs/commit/ec4e1ae31c882e8422e8defca6c10a9c79addc5d))
+
+## [7.34.1](https://github.com/kaitranntt/ccs/compare/v7.34.0...v7.34.1) (2026-02-03)
+
+### Bug Fixes
+
+* **dashboard:** cross-browser OAuth with manual callback fallback ([#417](https://github.com/kaitranntt/ccs/issues/417)) ([#423](https://github.com/kaitranntt/ccs/issues/423)) ([24b0312](https://github.com/kaitranntt/ccs/commit/24b03121fd43121f229bd4c07cbd7e3ee5a0234a))
+* **dashboard:** detect popup blocked during OAuth flow ([441870d](https://github.com/kaitranntt/ccs/commit/441870d38e5e7d8069df5f4695cb28275f0d48b6))
+* **jsonl:** add explicit UTF-8 BOM stripping ([09b5239](https://github.com/kaitranntt/ccs/commit/09b5239f58213b24f2e13116cb2384748bf8913f))
+* **quota:** add explicit 429 rate limit handling ([e596ab4](https://github.com/kaitranntt/ccs/commit/e596ab487d9782e4cd9633be081dc42e4a176668))
+* **quota:** improve 403 error messaging for forbidden accounts ([5a308db](https://github.com/kaitranntt/ccs/commit/5a308db409392d88e637ee66b9c693b8b7557198))
+* **websearch:** add type guards and deduplication for global settings ([847aad0](https://github.com/kaitranntt/ccs/commit/847aad00fee1fd920ddf8ea3a4b0e85aa1f3dfa4))
+* **websearch:** normalize double-slash paths in hook detection ([66f5fe6](https://github.com/kaitranntt/ccs/commit/66f5fe6b2c2a955b4b616c38042ab3c9ead199a1))
+* **websearch:** normalize Windows path separators in hook detection ([d61c940](https://github.com/kaitranntt/ccs/commit/d61c940a087d4e9134fa0a9ae32dc8d79d42648d))
+* **websocket:** add maxPayload limit to prevent DoS attacks ([4fd2f60](https://github.com/kaitranntt/ccs/commit/4fd2f601f676c0710b078960ad1d6c45fba8a6ca))
+
+### Code Refactoring
+
+* **oauth:** align box chars with CCS standard and add JSDoc ([258220b](https://github.com/kaitranntt/ccs/commit/258220b7e8ec833efe772bf32b61800e20439ddb))
+* **websearch:** extract shared hook utils to DRY module ([1f8d9b8](https://github.com/kaitranntt/ccs/commit/1f8d9b82d5ad89cefe73966e9c1ef57692dd9284)), closes [#420](https://github.com/kaitranntt/ccs/issues/420)
+
+### Tests
+
+* **websearch:** add unit tests for hook-utils module ([deb6249](https://github.com/kaitranntt/ccs/commit/deb62490dbe797369460ac07ad42a0790463a460))
+
 ## [7.34.0](https://github.com/kaitranntt/ccs/compare/v7.33.0...v7.34.0) (2026-02-01)
 
 ### Features

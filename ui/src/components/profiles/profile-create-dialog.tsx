@@ -4,14 +4,20 @@
  */
 
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -25,11 +31,14 @@ import { Badge } from '@/components/ui/badge';
 import { useCreateProfile } from '@/hooks/use-profiles';
 import { useOpenRouterCatalog } from '@/hooks/use-openrouter-models';
 import { Loader2, Plus, AlertTriangle, Info, Eye, EyeOff, Settings2, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
   PROVIDER_PRESETS,
   getPresetsByCategory,
+  getPresetById,
+  resolvePresetApiKeyValue,
   type ProviderPreset,
 } from '@/lib/provider-presets';
 import {
@@ -40,6 +49,8 @@ import {
   getNewestModelsPerProvider,
 } from '@/lib/openrouter-utils';
 import type { CategorizedModel } from '@/lib/openrouter-types';
+import type { CliTarget } from '@/lib/api-client';
+import i18n from '@/lib/i18n';
 
 const schema = z.object({
   name: z
@@ -52,19 +63,42 @@ const schema = z.object({
   opusModel: z.string().optional(),
   sonnetModel: z.string().optional(),
   haikuModel: z.string().optional(),
+  target: z.enum(['claude', 'droid']),
 });
 
 type FormData = z.infer<typeof schema>;
+type PresetSelection = ProviderPreset['id'] | 'custom';
 
 interface ProfileCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: (name: string) => void;
-  initialMode?: 'normal' | 'openrouter';
+  initialMode?: 'normal' | 'openrouter' | 'alibaba-coding-plan';
 }
 
 // Common URL mistakes to warn about
 const PROBLEMATIC_PATHS = ['/chat/completions', '/v1/messages', '/messages', '/completions'];
+const CUSTOM_PRESET_ID = 'custom';
+const DEFAULT_PRESET_ID: ProviderPreset['id'] = 'openrouter';
+
+const EMPTY_FORM_VALUES: FormData = {
+  name: '',
+  baseUrl: '',
+  apiKey: '',
+  model: '',
+  opusModel: '',
+  sonnetModel: '',
+  haikuModel: '',
+  target: 'claude',
+};
+
+const RECOMMENDED_PRESETS = getPresetsByCategory('recommended');
+const QUICK_TEMPLATE_PRESETS = PROVIDER_PRESETS.filter(
+  (preset) => preset.category !== 'recommended'
+);
+const QUICK_TEMPLATE_PRESET_IDS = new Set<string>(
+  QUICK_TEMPLATE_PRESETS.map((preset) => preset.id)
+);
 
 export function ProfileCreateDialog({
   open,
@@ -72,11 +106,12 @@ export function ProfileCreateDialog({
   onSuccess,
   initialMode = 'openrouter',
 }: ProfileCreateDialogProps) {
+  const { t } = useTranslation();
   const createMutation = useCreateProfile();
   const [activeTab, setActiveTab] = useState('basic');
   const [urlWarning, setUrlWarning] = useState<string | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState<string | null>('openrouter');
+  const [selectedPreset, setSelectedPreset] = useState<PresetSelection>(DEFAULT_PRESET_ID);
   const [modelSearch, setModelSearch] = useState('');
 
   // OpenRouter models for model picker
@@ -91,23 +126,35 @@ export function ProfileCreateDialog({
     setValue,
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: {
-      name: '',
-      baseUrl: '',
-      apiKey: '',
-      model: '',
-      opusModel: '',
-      sonnetModel: '',
-      haikuModel: '',
-    },
+    defaultValues: EMPTY_FORM_VALUES,
   });
 
   const baseUrlValue = useWatch({ control, name: 'baseUrl' });
+  const targetValue = useWatch({ control, name: 'target' });
+  const applyPresetToForm = useCallback(
+    (preset: ProviderPreset | null) => {
+      if (!preset) {
+        reset(EMPTY_FORM_VALUES);
+        return;
+      }
+
+      reset({
+        ...EMPTY_FORM_VALUES,
+        name: preset.defaultProfileName,
+        baseUrl: preset.baseUrl,
+        model: preset.defaultModel,
+        opusModel: preset.defaultModel,
+        sonnetModel: preset.defaultModel,
+        haikuModel: preset.defaultModel,
+      });
+    },
+    [reset]
+  );
 
   // Get current preset config
   const currentPreset = useMemo(() => {
-    if (!selectedPreset || selectedPreset === 'custom') return null;
-    return PROVIDER_PRESETS.find((p) => p.id === selectedPreset);
+    if (selectedPreset === CUSTOM_PRESET_ID) return null;
+    return getPresetById(selectedPreset) ?? null;
   }, [selectedPreset]);
 
   // Filter models for OpenRouter search (newest first)
@@ -124,7 +171,6 @@ export function ProfileCreateDialog({
   // Reset form when dialog opens
   useEffect(() => {
     if (open) {
-      reset();
       setActiveTab('basic');
       setUrlWarning(null);
       setShowApiKey(false);
@@ -132,48 +178,36 @@ export function ProfileCreateDialog({
 
       // Set initial preset based on initialMode
       if (initialMode === 'normal') {
-        // Custom mode - clear form
-        setSelectedPreset('custom');
-        setTimeout(() => {
-          setValue('name', '');
-          setValue('baseUrl', '');
-        }, 0);
+        setSelectedPreset(CUSTOM_PRESET_ID);
+        applyPresetToForm(null);
       } else {
-        // OpenRouter mode (default)
-        setSelectedPreset('openrouter');
-        const openrouterPreset = PROVIDER_PRESETS.find((p) => p.id === 'openrouter');
-        if (openrouterPreset) {
-          setTimeout(() => {
-            setValue('name', openrouterPreset.defaultProfileName);
-            setValue('baseUrl', openrouterPreset.baseUrl);
-            setValue('apiKey', openrouterPreset.apiKeyPlaceholder || '');
-          }, 0);
+        const presetId = initialMode === 'openrouter' ? DEFAULT_PRESET_ID : initialMode;
+        const defaultPreset = getPresetById(presetId);
+        if (defaultPreset) {
+          setSelectedPreset(defaultPreset.id);
+          applyPresetToForm(defaultPreset);
+          return;
         }
+
+        // Safe fallback if default preset is missing.
+        setSelectedPreset(CUSTOM_PRESET_ID);
+        applyPresetToForm(null);
       }
     }
-  }, [open, reset, setValue, initialMode]);
+  }, [open, initialMode, applyPresetToForm]);
 
   // Handle preset selection
   const handlePresetSelect = (presetId: string) => {
-    setSelectedPreset(presetId);
-    const preset = PROVIDER_PRESETS.find((p) => p.id === presetId);
+    const preset = getPresetById(presetId);
+
     if (preset) {
-      setValue('name', preset.defaultProfileName);
-      setValue('baseUrl', preset.baseUrl);
-      setValue('apiKey', preset.apiKeyPlaceholder || '');
-      if (preset.defaultModel) {
-        setValue('model', preset.defaultModel);
-        setValue('opusModel', preset.defaultModel);
-        setValue('sonnetModel', preset.defaultModel);
-        setValue('haikuModel', preset.defaultModel);
-      }
-    } else {
-      // Custom
-      setValue('name', '');
-      setValue('baseUrl', '');
-      setValue('apiKey', '');
-      setValue('model', '');
+      setSelectedPreset(preset.id);
+      applyPresetToForm(preset);
+      return;
     }
+
+    setSelectedPreset(CUSTOM_PRESET_ID);
+    applyPresetToForm(null);
   };
 
   // Handle model selection from picker - applies to all 4 model tiers
@@ -193,7 +227,7 @@ export function ProfileCreateDialog({
   // Presets (OpenRouter, GLM, GLMT, Kimi) have vetted URLs that may require full paths
   useEffect(() => {
     // Only warn for custom URLs, not preset-selected ones
-    const isCustomUrl = selectedPreset === 'custom';
+    const isCustomUrl = selectedPreset === CUSTOM_PRESET_ID;
     if (baseUrlValue && isCustomUrl) {
       const lowerUrl = baseUrlValue.toLowerCase();
       for (const path of PROBLEMATIC_PATHS) {
@@ -212,14 +246,13 @@ export function ProfileCreateDialog({
   const onSubmit = async (data: FormData) => {
     // Validate API key - required unless preset has requiresApiKey: false
     if (currentPreset?.requiresApiKey !== false && !data.apiKey) {
-      toast.error('API key is required');
+      toast.error(i18n.t('commonToast.apiKeyRequired'));
       return;
     }
     // Use user-provided baseUrl (allows customization of preset URLs)
     const finalData = {
       ...data,
-      // Use provided API key, or preset placeholder, or empty string
-      apiKey: data.apiKey || currentPreset?.apiKeyPlaceholder || '',
+      apiKey: resolvePresetApiKeyValue(currentPreset, data.apiKey),
     };
     try {
       await createMutation.mutateAsync(finalData);
@@ -235,11 +268,13 @@ export function ProfileCreateDialog({
   const hasModelErrors =
     !!errors.model || !!errors.opusModel || !!errors.sonnetModel || !!errors.haikuModel;
 
-  const isOpenRouter = selectedPreset === 'openrouter';
+  const isQuickTemplateSelected =
+    selectedPreset !== CUSTOM_PRESET_ID && QUICK_TEMPLATE_PRESET_IDS.has(selectedPreset);
+  const isOpenRouter = currentPreset?.id === DEFAULT_PRESET_ID;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] p-0 gap-0 overflow-hidden max-h-[90vh]">
+      <DialogContent className="sm:max-w-[700px] p-0 gap-0 overflow-hidden max-h-[90vh] !flex !flex-col">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle className="flex items-center gap-2">
             <Plus className="w-5 h-5 text-primary" />
@@ -250,14 +285,19 @@ export function ProfileCreateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col overflow-hidden">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="flex flex-col flex-1 min-h-0 overflow-hidden"
+        >
           {/* Provider Preset Cards - Compact horizontal layout */}
           <div className="px-6 py-3 border-b bg-muted/30 space-y-2">
             {/* Main Options: OpenRouter + Custom */}
             <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Provider</Label>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                {t('profileEditor.provider')}
+              </Label>
               <div className="flex gap-2">
-                {getPresetsByCategory('recommended').map((preset) => (
+                {RECOMMENDED_PRESETS.map((preset) => (
                   <CompactPresetCard
                     key={preset.id}
                     preset={preset}
@@ -268,30 +308,28 @@ export function ProfileCreateDialog({
                 {/* Custom option */}
                 <button
                   type="button"
-                  onClick={() => handlePresetSelect('custom')}
+                  onClick={() => handlePresetSelect(CUSTOM_PRESET_ID)}
                   className={cn(
                     'flex items-center gap-2 px-4 py-2 rounded-md border-2 transition-all text-sm font-medium',
-                    selectedPreset === 'custom' ||
-                      getPresetsByCategory('alternative').some((p) => p.id === selectedPreset)
+                    selectedPreset === CUSTOM_PRESET_ID || isQuickTemplateSelected
                       ? 'border-primary bg-primary/10 text-primary dark:bg-primary/20'
                       : 'border-dashed border-muted-foreground/40 hover:border-primary/50 hover:bg-muted/50 text-muted-foreground hover:text-foreground'
                   )}
                 >
                   <Settings2 className="w-4 h-4" />
-                  <span>Custom</span>
+                  <span>{t('profileEditor.custom')}</span>
                 </button>
               </div>
             </div>
 
-            {/* Show alternative presets when Custom is selected or an alternative is selected */}
-            {(selectedPreset === 'custom' ||
-              getPresetsByCategory('alternative').some((p) => p.id === selectedPreset)) && (
+            {/* Show quick templates when custom mode or non-recommended preset is selected */}
+            {(selectedPreset === CUSTOM_PRESET_ID || isQuickTemplateSelected) && (
               <div className="pt-3 mt-2 border-t border-dashed border-muted-foreground/30">
                 <Label className="text-xs font-medium text-foreground/70 mb-2 block">
                   Quick Templates
                 </Label>
                 <div className="flex gap-2 flex-wrap">
-                  {getPresetsByCategory('alternative').map((preset) => (
+                  {QUICK_TEMPLATE_PRESETS.map((preset) => (
                     <CompactPresetCard
                       key={preset.id}
                       preset={preset}
@@ -307,7 +345,7 @@ export function ProfileCreateDialog({
           <Tabs
             value={activeTab}
             onValueChange={setActiveTab}
-            className="flex flex-col flex-1 overflow-hidden"
+            className="flex flex-col flex-1 min-h-0 overflow-hidden"
           >
             <div className="px-6 pt-4">
               <TabsList className="grid w-full grid-cols-2">
@@ -326,7 +364,7 @@ export function ProfileCreateDialog({
               </TabsList>
             </div>
 
-            <ScrollArea className="flex-1">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <TabsContent value="basic" className="p-6 space-y-4 mt-0">
                 {/* Profile Name */}
                 <div className="space-y-1.5">
@@ -415,13 +453,37 @@ export function ProfileCreateDialog({
                     <p className="text-xs text-destructive">{errors.apiKey.message}</p>
                   ) : currentPreset?.requiresApiKey === false ? (
                     <p className="text-xs text-muted-foreground">
-                      Only needed if you have configured Ollama authentication
+                      Only needed if your local endpoint has authentication enabled
                     </p>
                   ) : (
                     currentPreset?.apiKeyHint && (
                       <p className="text-xs text-muted-foreground">{currentPreset.apiKeyHint}</p>
                     )
                   )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="target">Default Target CLI</Label>
+                  <Select
+                    value={targetValue}
+                    onValueChange={(value) => setValue('target', value as CliTarget)}
+                  >
+                    <SelectTrigger id="target">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="claude">Claude Code (default)</SelectItem>
+                      <SelectItem value="droid">Factory Droid</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Run with{' '}
+                    <code className="bg-muted px-1 rounded text-[10px]">
+                      {targetValue === 'droid' ? 'ccsd' : 'ccs'}
+                    </code>{' '}
+                    by default. You can still override each run with{' '}
+                    <code className="bg-muted px-1 rounded text-[10px]">--target</code>.
+                  </p>
                 </div>
               </TabsContent>
 
@@ -546,7 +608,7 @@ export function ProfileCreateDialog({
                   </div>
                 </div>
               </TabsContent>
-            </ScrollArea>
+            </div>
 
             <DialogFooter className="p-6 pt-4 border-t bg-muted/10">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

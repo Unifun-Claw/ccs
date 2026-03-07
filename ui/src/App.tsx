@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { queryClient } from '@/lib/query-client';
+import '@/lib/i18n';
 import { ThemeProvider } from '@/components/layout/theme-provider';
 import { PrivacyProvider } from '@/contexts/privacy-context';
 import { AuthProvider } from '@/contexts/auth-context';
@@ -26,6 +27,8 @@ const CliproxyControlPanelPage = lazy(() =>
   import('@/pages/cliproxy-control-panel').then((m) => ({ default: m.CliproxyControlPanelPage }))
 );
 const CopilotPage = lazy(() => import('@/pages/copilot').then((m) => ({ default: m.CopilotPage })));
+const CursorPage = lazy(() => import('@/pages/cursor').then((m) => ({ default: m.CursorPage })));
+const DroidPage = lazy(() => import('@/pages/droid').then((m) => ({ default: m.DroidPage })));
 const AccountsPage = lazy(() =>
   import('@/pages/accounts').then((m) => ({ default: m.AccountsPage }))
 );
@@ -34,6 +37,7 @@ const SettingsPage = lazy(() =>
 );
 const HealthPage = lazy(() => import('@/pages/health').then((m) => ({ default: m.HealthPage })));
 const SharedPage = lazy(() => import('@/pages/shared').then((m) => ({ default: m.SharedPage })));
+const UpdatesPage = lazy(() => import('@/pages/updates').then((m) => ({ default: m.UpdatesPage })));
 
 // Loading fallback for lazy components
 function PageLoader() {
@@ -68,6 +72,14 @@ export default function App() {
                       }
                     />
                     <Route
+                      path="/updates"
+                      element={
+                        <Suspense fallback={<PageLoader />}>
+                          <UpdatesPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
                       path="/providers"
                       element={
                         <Suspense fallback={<PageLoader />}>
@@ -96,6 +108,22 @@ export default function App() {
                       element={
                         <Suspense fallback={<PageLoader />}>
                           <CopilotPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="/cursor"
+                      element={
+                        <Suspense fallback={<PageLoader />}>
+                          <CursorPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="/droid"
+                      element={
+                        <Suspense fallback={<PageLoader />}>
+                          <DroidPage />
                         </Suspense>
                       }
                     />

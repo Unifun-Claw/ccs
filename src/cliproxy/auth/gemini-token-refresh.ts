@@ -16,25 +16,17 @@ import { getProviderAuthDir } from '../config-generator';
 import { getDefaultAccount, getProviderAccounts } from '../account-manager';
 import { isTokenFileForProvider } from './token-manager';
 
-/**
- * Gemini OAuth credentials - PUBLIC from official Gemini CLI source code
- * These are not secrets - they're public OAuth client credentials that Google
- * distributes with their official applications. See:
- * https://github.com/google/generative-ai-python (Gemini CLI source)
- *
- * GitHub secret scanning may flag these, but they are intentionally hardcoded
- * as they're required for OAuth token refresh and are publicly documented.
- */
-
-const GEMINI_CLIENT_ID = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
-
-const GEMINI_CLIENT_SECRET = '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';
-
 /** Google OAuth token endpoint */
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 /** Refresh tokens 5 minutes before expiry */
 const REFRESH_LEAD_TIME_MS = 5 * 60 * 1000;
+
+const GEMINI_CLIENT_ID_ENV_KEYS = ['CCS_GEMINI_OAUTH_CLIENT_ID', 'OPENCLAW_GEMINI_OAUTH_CLIENT_ID'];
+const GEMINI_CLIENT_SECRET_ENV_KEYS = [
+  'CCS_GEMINI_OAUTH_CLIENT_SECRET',
+  'OPENCLAW_GEMINI_OAUTH_CLIENT_SECRET',
+];
 
 /** Gemini oauth_creds.json structure */
 interface GeminiOAuthCreds {
@@ -44,6 +36,9 @@ interface GeminiOAuthCreds {
   scope?: string;
   token_type?: string;
   id_token?: string;
+  client_id?: string;
+  client_secret?: string;
+  token_uri?: string;
 }
 
 /** Gemini credentials with source path for write-back */
@@ -58,6 +53,9 @@ interface CliproxyGeminiToken {
     access_token: string;
     refresh_token?: string;
     expiry?: number; // Unix timestamp in milliseconds
+    client_id?: string;
+    client_secret?: string;
+    token_uri?: string;
   };
   project_id: string;
   email: string;
@@ -71,6 +69,12 @@ interface TokenRefreshResponse {
   token_type?: string;
   error?: string;
   error_description?: string;
+}
+
+interface GoogleOAuthClientCredentials {
+  clientId: string;
+  clientSecret: string;
+  tokenUrl: string;
 }
 
 /**
@@ -89,6 +93,9 @@ function mapCliproxyToGeminiCreds(cliproxy: CliproxyGeminiToken): GeminiOAuthCre
     refresh_token: cliproxy.token.refresh_token,
     expiry_date: cliproxy.token.expiry,
     token_type: 'Bearer',
+    client_id: cliproxy.token.client_id,
+    client_secret: cliproxy.token.client_secret,
+    token_uri: cliproxy.token.token_uri,
   };
 }
 
@@ -104,46 +111,92 @@ function isValidCliproxyToken(data: unknown): data is CliproxyGeminiToken {
   return typeof token.access_token === 'string';
 }
 
+function getFirstEnvValue(keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = process.env[key]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function resolveGeminiRefreshCredentials(creds: GeminiOAuthCreds): {
+  credentials?: GoogleOAuthClientCredentials;
+  error?: string;
+} {
+  const clientId = creds.client_id?.trim() || getFirstEnvValue(GEMINI_CLIENT_ID_ENV_KEYS);
+  const clientSecret =
+    creds.client_secret?.trim() || getFirstEnvValue(GEMINI_CLIENT_SECRET_ENV_KEYS);
+
+  if (!clientId || !clientSecret) {
+    return {
+      error:
+        'Gemini token refresh unavailable: missing OAuth client credentials in the token file. ' +
+        'Re-authenticate with CLIProxy or set CCS_GEMINI_OAUTH_CLIENT_ID and CCS_GEMINI_OAUTH_CLIENT_SECRET.',
+    };
+  }
+
+  return {
+    credentials: {
+      clientId,
+      clientSecret,
+      tokenUrl: creds.token_uri?.trim() || GOOGLE_TOKEN_URL,
+    },
+  };
+}
+
 /**
  * Read Gemini token from CLIProxy auth directory
  * Returns credentials with source path, or null if no valid token found
  */
-function readCliproxyGeminiCreds(): GeminiCredsWithSource | null {
+function readCliproxyGeminiCreds(accountId?: string): GeminiCredsWithSource | null {
   const authDir = getProviderAuthDir('gemini');
   if (!fs.existsSync(authDir)) return null;
 
-  // Try to find default account's token file
-  const defaultAccount = getDefaultAccount('gemini');
   let tokenPath: string | null = null;
+  const normalizedAccountId = accountId?.trim();
+  const accounts = getProviderAccounts('gemini');
 
-  if (defaultAccount) {
-    tokenPath = path.join(authDir, defaultAccount.tokenFile);
-    if (!fs.existsSync(tokenPath)) tokenPath = null;
+  // Account-specific refresh path (used by background worker)
+  if (normalizedAccountId) {
+    const targetAccount = accounts.find((account) => account.id === normalizedAccountId);
+    if (!targetAccount) {
+      return null;
+    }
+
+    tokenPath = path.join(authDir, targetAccount.tokenFile);
   }
 
-  // Fallback: find any gemini token file by prefix or type
-  if (!tokenPath) {
-    const accounts = getProviderAccounts('gemini');
-    if (accounts.length > 0) {
+  if (!normalizedAccountId) {
+    // Try to find default account's token file
+    const defaultAccount = getDefaultAccount('gemini');
+    if (defaultAccount) {
+      tokenPath = path.join(authDir, defaultAccount.tokenFile);
+      if (!fs.existsSync(tokenPath)) tokenPath = null;
+    }
+
+    // Fallback: find any gemini account token file
+    if (!tokenPath && accounts.length > 0) {
       tokenPath = path.join(authDir, accounts[0].tokenFile);
       if (!fs.existsSync(tokenPath)) tokenPath = null;
     }
-  }
 
-  // Last fallback: scan directory for gemini token files
-  if (!tokenPath) {
-    try {
-      const files = fs.readdirSync(authDir).filter((f) => f.endsWith('.json'));
-      for (const file of files) {
-        const filePath = path.join(authDir, file);
-        if (file.startsWith('gemini-') || isTokenFileForProvider(filePath, 'gemini')) {
-          tokenPath = filePath;
-          break;
+    // Last fallback: scan directory for gemini token files
+    if (!tokenPath) {
+      try {
+        const files = fs.readdirSync(authDir).filter((f) => f.endsWith('.json'));
+        for (const file of files) {
+          const filePath = path.join(authDir, file);
+          if (file.startsWith('gemini-') || isTokenFileForProvider(filePath, 'gemini')) {
+            tokenPath = filePath;
+            break;
+          }
         }
+      } catch {
+        // Directory read failed - continue to return null
+        return null;
       }
-    } catch {
-      // Directory read failed - continue to return null
-      return null;
     }
   }
 
@@ -172,11 +225,17 @@ function readCliproxyGeminiCreds(): GeminiCredsWithSource | null {
  * Priority: CLIProxy auth dir first, then ~/.gemini/oauth_creds.json
  * Returns credentials with source path for correct write-back
  */
-function readGeminiCreds(): GeminiCredsWithSource | null {
+function readGeminiCreds(accountId?: string): GeminiCredsWithSource | null {
   // 1. Try CLIProxy auth directory first (CCS-managed tokens)
-  const cliproxyResult = readCliproxyGeminiCreds();
+  const cliproxyResult = readCliproxyGeminiCreds(accountId);
   if (cliproxyResult) {
     return cliproxyResult;
+  }
+
+  // Account-scoped refresh is only supported for CLIProxy account files.
+  // Do not fall back to ~/.gemini for a specific accountId.
+  if (accountId?.trim()) {
+    return null;
   }
 
   // 2. Fall back to standard Gemini CLI location
@@ -249,8 +308,8 @@ function writeGeminiCreds(creds: GeminiOAuthCreds, sourcePath: string): string |
 /**
  * Check if Gemini token is expired or expiring soon
  */
-export function isGeminiTokenExpiringSoon(): boolean {
-  const result = readGeminiCreds();
+export function isGeminiTokenExpiringSoon(accountId?: string): boolean {
+  const result = readGeminiCreds(accountId);
   if (!result || !result.creds.access_token) {
     return true; // No token = needs auth
   }
@@ -263,24 +322,31 @@ export function isGeminiTokenExpiringSoon(): boolean {
 
 /**
  * Refresh Gemini access token using refresh_token
+ * @param accountId Optional account ID for account-scoped refresh
  * @returns Result with success status, optional error, and expiry time
  */
-export async function refreshGeminiToken(): Promise<{
+export async function refreshGeminiToken(accountId?: string): Promise<{
   success: boolean;
   error?: string;
   expiresAt?: number;
 }> {
-  const result = readGeminiCreds();
+  const result = readGeminiCreds(accountId);
   if (!result || !result.creds.refresh_token) {
     return { success: false, error: 'No refresh token available' };
   }
 
   const { creds, sourcePath } = result;
+  const resolvedCredentials = resolveGeminiRefreshCredentials(creds);
+  if (!resolvedCredentials.credentials) {
+    return { success: false, error: resolvedCredentials.error };
+  }
+
+  const { clientId, clientSecret, tokenUrl } = resolvedCredentials.credentials;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const response = await fetch(GOOGLE_TOKEN_URL, {
+    const response = await fetch(tokenUrl, {
       method: 'POST',
       signal: controller.signal,
       headers: {
@@ -289,8 +355,8 @@ export async function refreshGeminiToken(): Promise<{
       body: new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: creds.refresh_token as string, // Already validated above
-        client_id: GEMINI_CLIENT_ID,
-        client_secret: GEMINI_CLIENT_SECRET,
+        client_id: clientId,
+        client_secret: clientSecret,
       }).toString(),
     });
 
@@ -334,19 +400,23 @@ export async function refreshGeminiToken(): Promise<{
 /**
  * Ensure Gemini token is valid, refreshing if needed
  * @param verbose Log progress if true
+ * @param accountId Optional account ID for account-scoped refresh
  * @returns true if token is valid (or was refreshed), false if refresh failed
  */
-export async function ensureGeminiTokenValid(verbose = false): Promise<{
+export async function ensureGeminiTokenValid(
+  verbose = false,
+  accountId?: string
+): Promise<{
   valid: boolean;
   refreshed: boolean;
   error?: string;
 }> {
-  const result = readGeminiCreds();
+  const result = readGeminiCreds(accountId);
   if (!result || !result.creds.access_token) {
     return { valid: false, refreshed: false, error: 'No Gemini credentials found' };
   }
 
-  if (!isGeminiTokenExpiringSoon()) {
+  if (!isGeminiTokenExpiringSoon(accountId)) {
     return { valid: true, refreshed: false };
   }
 
@@ -355,7 +425,7 @@ export async function ensureGeminiTokenValid(verbose = false): Promise<{
     console.log('[i] Gemini token expired or expiring soon, refreshing...');
   }
 
-  const refreshResult = await refreshGeminiToken();
+  const refreshResult = await refreshGeminiToken(accountId);
   if (refreshResult.success) {
     if (verbose) {
       console.log('[OK] Gemini token refreshed successfully');

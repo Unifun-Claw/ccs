@@ -5,27 +5,102 @@
 
 import type { CLIProxyProvider } from './provider-config';
 
-const BASE_URL = '/api';
+export const API_BASE_URL = '/api';
+export const API_CONFLICT_ERROR_CODE = 'CONFLICT';
+
+export class ApiConflictError extends Error {
+  readonly code = API_CONFLICT_ERROR_CODE;
+
+  constructor(message = 'Resource modified externally') {
+    super(message);
+    this.name = 'ApiConflictError';
+  }
+}
+
+export function isApiConflictError(error: unknown): error is Error & { code: string } {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    (error as { code?: unknown }).code === API_CONFLICT_ERROR_CODE
+  );
+}
+
+export function withApiBase(path: string): string {
+  if (!path) {
+    return API_BASE_URL;
+  }
+
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  if (path === API_BASE_URL || path.startsWith(`${API_BASE_URL}/`)) {
+    return path;
+  }
+
+  return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+async function parseErrorMessage(response: Response): Promise<string> {
+  const fallbackMessage = `Request failed (${response.status}${response.statusText ? ` ${response.statusText}` : ''})`;
+  const bodyText = await response.text();
+  if (!bodyText) {
+    return fallbackMessage;
+  }
+
+  try {
+    const parsed = JSON.parse(bodyText) as { error?: string; message?: string };
+    if (parsed.error?.trim()) {
+      return parsed.error;
+    }
+    if (parsed.message?.trim()) {
+      return parsed.message;
+    }
+    return fallbackMessage;
+  } catch {
+    return bodyText.trim() || fallbackMessage;
+  }
+}
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${url}`, {
+  const res = await fetch(withApiBase(url), {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(error.error || res.statusText);
+    throw new Error(await parseErrorMessage(res));
   }
 
-  return res.json();
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
+  const contentType = res.headers.get('content-type')?.toLowerCase() ?? '';
+  if (contentType.includes('application/json')) {
+    return (await res.json()) as T;
+  }
+
+  const bodyText = await res.text();
+  if (!bodyText) {
+    return undefined as T;
+  }
+
+  try {
+    return JSON.parse(bodyText) as T;
+  } catch {
+    return bodyText as T;
+  }
 }
 
 // Types
+export type CliTarget = 'claude' | 'droid';
+
 export interface Profile {
   name: string;
   settingsPath: string;
   configured: boolean;
+  target?: CliTarget;
 }
 
 export interface CreateProfile {
@@ -36,6 +111,7 @@ export interface CreateProfile {
   opusModel?: string;
   sonnetModel?: string;
   haikuModel?: string;
+  target?: CliTarget;
 }
 
 export interface UpdateProfile {
@@ -45,6 +121,84 @@ export interface UpdateProfile {
   opusModel?: string;
   sonnetModel?: string;
   haikuModel?: string;
+  target?: CliTarget;
+}
+
+export interface ProfileValidationIssue {
+  level: 'error' | 'warning';
+  code: string;
+  message: string;
+  field?: string;
+  hint?: string;
+}
+
+export interface ProfileValidationSummary {
+  valid: boolean;
+  issues: ProfileValidationIssue[];
+}
+
+export interface ApiProfileOrphanCandidate {
+  name: string;
+  settingsPath: string;
+  validation: ProfileValidationSummary;
+}
+
+export interface DiscoverProfileOrphansResponse {
+  orphans: ApiProfileOrphanCandidate[];
+}
+
+export interface RegisterProfileOrphansRequest {
+  names?: string[];
+  target?: CliTarget;
+  force?: boolean;
+}
+
+export interface RegisterProfileOrphansResponse {
+  registered: string[];
+  skipped: Array<{ name: string; reason: string }>;
+}
+
+export interface CopyProfileRequest {
+  destination: string;
+  target?: CliTarget;
+  force?: boolean;
+}
+
+export interface CopyProfileResponse {
+  success: boolean;
+  name?: string;
+  settingsPath?: string;
+  warnings?: string[];
+}
+
+export interface ApiProfileExportBundle {
+  schemaVersion: 1;
+  exportedAt: string;
+  profile: {
+    name: string;
+    target: CliTarget;
+  };
+  settings: Record<string, unknown>;
+}
+
+export interface ExportProfileResponse {
+  success: boolean;
+  bundle: ApiProfileExportBundle;
+  redacted?: boolean;
+}
+
+export interface ImportProfileRequest {
+  bundle: ApiProfileExportBundle;
+  name?: string;
+  target?: CliTarget;
+  force?: boolean;
+}
+
+export interface ImportProfileResponse {
+  success: boolean;
+  name?: string;
+  warnings?: string[];
+  validation?: ProfileValidationSummary;
 }
 
 export interface Variant {
@@ -54,6 +208,14 @@ export interface Variant {
   account?: string;
   port?: number;
   model?: string;
+  target?: CliTarget;
+  type?: 'composite';
+  default_tier?: 'opus' | 'sonnet' | 'haiku';
+  tiers?: {
+    opus: { provider: string; model: string; account?: string; thinking?: string };
+    sonnet: { provider: string; model: string; account?: string; thinking?: string };
+    haiku: { provider: string; model: string; account?: string; thinking?: string };
+  };
 }
 
 export interface CreateVariant {
@@ -61,12 +223,28 @@ export interface CreateVariant {
   provider: CLIProxyProvider;
   model?: string;
   account?: string;
+  target?: CliTarget;
+  type?: 'composite';
+  default_tier?: 'opus' | 'sonnet' | 'haiku';
+  tiers?: {
+    opus: { provider: string; model: string; account?: string; thinking?: string };
+    sonnet: { provider: string; model: string; account?: string; thinking?: string };
+    haiku: { provider: string; model: string; account?: string; thinking?: string };
+  };
 }
 
 export interface UpdateVariant {
   provider?: CLIProxyProvider;
   model?: string;
   account?: string;
+  target?: CliTarget;
+  type?: 'composite';
+  default_tier?: 'opus' | 'sonnet' | 'haiku';
+  tiers?: {
+    opus: { provider: string; model: string; account?: string; thinking?: string };
+    sonnet: { provider: string; model: string; account?: string; thinking?: string };
+    haiku: { provider: string; model: string; account?: string; thinking?: string };
+  };
 }
 
 /** OAuth account info for multi-account support */
@@ -140,10 +318,20 @@ export interface QuotaResult {
   models: ModelQuota[];
   /** Timestamp of fetch */
   lastUpdated: number;
+  /** Upstream HTTP status when available */
+  httpStatus?: number;
+  /** Stable machine-readable error code */
+  errorCode?: string;
+  /** Additional provider-specific detail/code from upstream */
+  errorDetail?: string;
   /** True if account lacks quota access (403) */
   isForbidden?: boolean;
   /** Error message if fetch failed */
   error?: string;
+  /** Provider-specific remediation guidance */
+  actionHint?: string;
+  /** True when the failure is temporary and retrying later may help */
+  retryable?: boolean;
   /** True if token is expired and needs re-authentication */
   needsReauth?: boolean;
 }
@@ -162,26 +350,117 @@ export interface CodexQuotaWindow {
   resetAt: string | null;
 }
 
+/** Core Codex usage window (5h/weekly) extracted from raw windows */
+export interface CodexCoreUsageWindow {
+  /** Source window label */
+  label: string;
+  /** Percentage remaining (0-100) */
+  remainingPercent: number;
+  /** Seconds until quota resets, null if unknown */
+  resetAfterSeconds: number | null;
+  /** ISO timestamp when quota resets, null if unknown */
+  resetAt: string | null;
+}
+
+/** Core Codex usage summary with explicit 5h and weekly windows */
+export interface CodexCoreUsageSummary {
+  /** Short-cycle usage limit window (typically 5h) */
+  fiveHour: CodexCoreUsageWindow | null;
+  /** Long-cycle usage limit window (typically weekly) */
+  weekly: CodexCoreUsageWindow | null;
+}
+
 /** Codex quota result */
 export interface CodexQuotaResult {
   /** Whether fetch succeeded */
   success: boolean;
   /** Quota windows (primary, secondary, code review) */
   windows: CodexQuotaWindow[];
+  /** Explicit core usage windows (5h + weekly) for easier reset display */
+  coreUsage?: CodexCoreUsageSummary;
   /** Plan type: free, plus, team, or null if unknown */
   planType: 'free' | 'plus' | 'team' | null;
   /** Timestamp of fetch */
   lastUpdated: number;
+  /** Upstream HTTP status when available */
+  httpStatus?: number;
+  /** Stable machine-readable error code */
+  errorCode?: string;
+  /** Additional provider-specific detail/code from upstream */
+  errorDetail?: string;
   /** Error message if fetch failed */
   error?: string;
   /** Account ID (email) this quota belongs to */
   accountId?: string;
+  /** Provider-specific remediation guidance */
+  actionHint?: string;
   /** True if token is expired and needs re-authentication */
   needsReauth?: boolean;
+  /** True when the failure is temporary and retrying later may help */
+  retryable?: boolean;
   /** True if result was served from cache */
   cached?: boolean;
   /** True if account lacks quota access (403) - displayed as 0% instead of error */
   isForbidden?: boolean;
+}
+
+/** Claude policy limit window */
+export interface ClaudeQuotaWindow {
+  /** Source identifier: five_hour, seven_day, seven_day_opus, seven_day_sonnet, overage, ... */
+  rateLimitType: string;
+  /** Human-friendly label for UI display */
+  label: string;
+  /** Upstream status: allowed, allowed_warning, rejected */
+  status: string;
+  /** Utilization ratio (0-1) when available */
+  utilization: number | null;
+  /** Utilization as percentage (0-100) */
+  usedPercent: number;
+  /** Remaining percentage (100 - usedPercent) */
+  remainingPercent: number;
+  /** Reset timestamp for this window, null if unknown */
+  resetAt: string | null;
+  surpassedThreshold?: boolean;
+  severity?: string;
+  overageStatus?: string;
+  overageResetsAt?: string | null;
+  overageDisabledReason?: string | null;
+  isUsingOverage?: boolean;
+  hasExtraUsageEnabled?: boolean;
+}
+
+/** Core Claude usage window (5h/weekly) */
+export interface ClaudeCoreUsageWindow {
+  rateLimitType: string;
+  label: string;
+  remainingPercent: number;
+  resetAt: string | null;
+  status: string;
+}
+
+/** Core Claude usage summary (5h + weekly) */
+export interface ClaudeCoreUsageSummary {
+  fiveHour: ClaudeCoreUsageWindow | null;
+  weekly: ClaudeCoreUsageWindow | null;
+}
+
+/** Claude quota result */
+export interface ClaudeQuotaResult {
+  success: boolean;
+  windows: ClaudeQuotaWindow[];
+  coreUsage?: ClaudeCoreUsageSummary;
+  lastUpdated: number;
+  httpStatus?: number;
+  errorCode?: string;
+  errorDetail?: string;
+  isForbidden?: boolean;
+  error?: string;
+  accountId?: string;
+  actionHint?: string;
+  needsReauth?: boolean;
+  retryable?: boolean;
+  /** True if result was served from cache */
+  cached?: boolean;
 }
 
 /** Gemini CLI bucket (grouped by model series) */
@@ -212,12 +491,83 @@ export interface GeminiCliQuotaResult {
   projectId: string | null;
   /** Timestamp of fetch */
   lastUpdated: number;
+  /** Upstream HTTP status when available */
+  httpStatus?: number;
+  /** Stable machine-readable error code */
+  errorCode?: string;
+  /** Additional provider-specific detail/code from upstream */
+  errorDetail?: string;
+  /** True if account lacks quota access (403) */
+  isForbidden?: boolean;
   /** Error message if fetch failed */
   error?: string;
   /** Account ID (email) this quota belongs to */
   accountId?: string;
+  /** Provider-specific remediation guidance */
+  actionHint?: string;
   /** True if token is expired and needs re-authentication */
   needsReauth?: boolean;
+  /** True when the failure is temporary and retrying later may help */
+  retryable?: boolean;
+  /** True if result was served from cache */
+  cached?: boolean;
+}
+
+/** GitHub Copilot quota snapshot */
+export interface GhcpQuotaSnapshot {
+  /** Total quota allocation for this category */
+  entitlement: number;
+  /** Remaining quota count */
+  remaining: number;
+  /** Used quota count */
+  used: number;
+  /** Remaining quota percentage (0-100) */
+  percentRemaining: number;
+  /** Used quota percentage (0-100) */
+  percentUsed: number;
+  /** Whether this quota category is unlimited */
+  unlimited: boolean;
+  /** Overage usage count */
+  overageCount: number;
+  /** Whether overage is permitted */
+  overagePermitted: boolean;
+  /** Upstream quota identifier if available */
+  quotaId: string | null;
+}
+
+/** GitHub Copilot (ghcp) quota result */
+export interface GhcpQuotaResult {
+  /** Whether fetch succeeded */
+  success: boolean;
+  /** Copilot plan type */
+  planType: string | null;
+  /** Quota reset date/time */
+  quotaResetDate: string | null;
+  snapshots: {
+    premiumInteractions: GhcpQuotaSnapshot;
+    chat: GhcpQuotaSnapshot;
+    completions: GhcpQuotaSnapshot;
+  };
+  /** Timestamp of fetch */
+  lastUpdated: number;
+  /** Upstream HTTP status when available */
+  httpStatus?: number;
+  /** Stable machine-readable error code */
+  errorCode?: string;
+  /** Additional provider-specific detail/code from upstream */
+  errorDetail?: string;
+  /** True if account lacks quota access (403) */
+  isForbidden?: boolean;
+  /** Error message if fetch failed */
+  error?: string;
+  /** Account ID this quota belongs to */
+  accountId?: string;
+  /** Provider-specific remediation guidance */
+  actionHint?: string;
+  /** True if token is expired and needs re-authentication */
+  needsReauth?: boolean;
+  /** True when the failure is temporary and retrying later may help */
+  retryable?: boolean;
   /** True if result was served from cache */
   cached?: boolean;
 }
@@ -230,6 +580,19 @@ export interface Account {
   type?: string;
   created: string;
   last_used?: string | null;
+  context_mode?: 'isolated' | 'shared';
+  context_group?: string;
+  continuity_mode?: 'standard' | 'deeper';
+  context_inferred?: boolean;
+  continuity_inferred?: boolean;
+  provider?: string;
+  displayName?: string;
+}
+
+export interface UpdateAccountContext {
+  context_mode: 'isolated' | 'shared';
+  context_group?: string;
+  continuity_mode?: 'standard' | 'deeper';
 }
 
 // Unified config types
@@ -362,6 +725,10 @@ export interface CliproxyVersionsResponse {
   latest: string;
   currentVersion: string;
   maxStableVersion: string;
+  faultyRange?: {
+    min: string;
+    max: string;
+  };
   fromCache: boolean;
   checkedAt: number;
 }
@@ -370,7 +737,10 @@ export interface CliproxyVersionsResponse {
 export interface CliproxyInstallResult {
   success: boolean;
   version?: string;
-  isUnstable?: boolean;
+  restarted?: boolean;
+  port?: number;
+  isFaulty?: boolean;
+  isExperimental?: boolean;
   requiresConfirmation?: boolean;
   message?: string;
   error?: string;
@@ -398,6 +768,27 @@ export const api = {
         body: JSON.stringify(data),
       }),
     delete: (name: string) => request(`/profiles/${name}`, { method: 'DELETE' }),
+    discoverOrphans: () => request<DiscoverProfileOrphansResponse>('/profiles/orphans'),
+    registerOrphans: (data: RegisterProfileOrphansRequest) =>
+      request<RegisterProfileOrphansResponse>('/profiles/orphans/register', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    copy: (name: string, data: CopyProfileRequest) =>
+      request<CopyProfileResponse>(`/profiles/${name}/copy`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    export: (name: string, includeSecrets = false) =>
+      request<ExportProfileResponse>(`/profiles/${name}/export`, {
+        method: 'POST',
+        body: JSON.stringify({ includeSecrets }),
+      }),
+    import: (data: ImportProfileRequest) =>
+      request<ImportProfileResponse>('/profiles/import', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   },
   cliproxy: {
     list: () => request<{ variants: Variant[] }>('/cliproxy'),
@@ -443,12 +834,12 @@ export const api = {
 
     // Config YAML for Config tab
     getConfigYaml: async (): Promise<string> => {
-      const res = await fetch(`${BASE_URL}/cliproxy/config.yaml`);
+      const res = await fetch(withApiBase('/cliproxy/config.yaml'));
       if (!res.ok) throw new Error('Failed to load config');
       return res.text();
     },
     saveConfigYaml: async (content: string): Promise<void> => {
-      const res = await fetch(`${BASE_URL}/cliproxy/config.yaml`, {
+      const res = await fetch(withApiBase('/cliproxy/config.yaml'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/yaml' },
         body: content,
@@ -463,7 +854,7 @@ export const api = {
     getAuthFiles: () => request<{ files: AuthFile[] }>('/cliproxy/auth-files'),
     getAuthFile: async (name: string): Promise<string> => {
       const res = await fetch(
-        `${BASE_URL}/cliproxy/auth-files/download?name=${encodeURIComponent(name)}`
+        withApiBase(`/cliproxy/auth-files/download?name=${encodeURIComponent(name)}`)
       );
       if (!res.ok) throw new Error('Failed to load auth file');
       return res.text();
@@ -545,7 +936,7 @@ export const api = {
       list: () => request<{ files: CliproxyErrorLog[] }>('/cliproxy/error-logs'),
       /** Get content of a specific error log */
       getContent: async (name: string): Promise<string> => {
-        const res = await fetch(`${BASE_URL}/cliproxy/error-logs/${encodeURIComponent(name)}`);
+        const res = await fetch(withApiBase(`/cliproxy/error-logs/${encodeURIComponent(name)}`));
         if (!res.ok) throw new Error('Failed to load error log');
         return res.text();
       },
@@ -560,6 +951,11 @@ export const api = {
       }),
     resetDefault: () => request('/accounts/reset-default', { method: 'DELETE' }),
     delete: (name: string) => request(`/accounts/${name}`, { method: 'DELETE' }),
+    updateContext: (name: string, data: UpdateAccountContext) =>
+      request(`/accounts/${encodeURIComponent(name)}/context`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
   },
   // Unified config API
   config: {
@@ -631,6 +1027,9 @@ export const api = {
     /** Fetch Codex quota for a specific account */
     getCodex: (accountId: string) =>
       request<CodexQuotaResult>(`/cliproxy/quota/codex/${encodeURIComponent(accountId)}`),
+    /** Fetch Claude quota for a specific account */
+    getClaude: (accountId: string) =>
+      request<ClaudeQuotaResult>(`/cliproxy/quota/claude/${encodeURIComponent(accountId)}`),
     /** Fetch Gemini CLI quota for a specific account */
     getGemini: (accountId: string) =>
       request<GeminiCliQuotaResult>(`/cliproxy/quota/gemini/${encodeURIComponent(accountId)}`),

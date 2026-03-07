@@ -2,7 +2,7 @@
  * Profile Detector
  *
  * Determines profile type (settings-based vs account-based) for routing.
- * Priority: settings-based profiles (glm/kimi) checked FIRST for backward compatibility.
+ * Priority: settings-based profiles (glm/km) checked FIRST for backward compatibility.
  *
  * Supports dual-mode configuration:
  * - Unified YAML format (config.yaml) when CCS_UNIFIED_CONFIG=1 or config.yaml exists
@@ -13,28 +13,30 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { findSimilarStrings, expandPath } from '../utils/helpers';
 import { Config, Settings, ProfileMetadata } from '../types';
-import { UnifiedConfig, CopilotConfig } from '../config/unified-config-types';
+import {
+  UnifiedConfig,
+  CopilotConfig,
+  CLIProxyVariantConfig,
+  CompositeVariantConfig,
+  CompositeTierConfig,
+} from '../config/unified-config-types';
 import { loadUnifiedConfig, isUnifiedMode } from '../config/unified-config-loader';
 import { getCcsDir } from '../utils/config-manager';
-
-export type ProfileType = 'settings' | 'account' | 'cliproxy' | 'copilot' | 'default';
+import { getProfileLookupCandidates, isLegacyProfileAlias } from '../utils/profile-compat';
+import type { CLIProxyProvider } from '../cliproxy/types';
+import { CLIPROXY_PROVIDER_IDS, isCLIProxyProvider } from '../cliproxy/provider-capabilities';
+import type { TargetType } from '../targets/target-adapter';
+import type { ProfileType } from '../types/profile';
+export type { ProfileType } from '../types/profile';
 
 /** CLIProxy profile names (OAuth-based, zero config) */
-export const CLIPROXY_PROFILES = [
-  'gemini',
-  'codex',
-  'agy',
-  'qwen',
-  'iflow',
-  'kiro',
-  'ghcp',
-  'claude',
-] as const;
-export type CLIProxyProfileName = (typeof CLIPROXY_PROFILES)[number];
+export const CLIPROXY_PROFILES: readonly CLIProxyProvider[] = CLIPROXY_PROVIDER_IDS;
+export type CLIProxyProfileName = CLIProxyProvider;
 
 export interface ProfileDetectionResult {
   type: ProfileType;
   name: string;
+  target?: TargetType;
   settingsPath?: string;
   profile?: Settings | ProfileMetadata;
   message?: string;
@@ -46,6 +48,16 @@ export interface ProfileDetectionResult {
   env?: Record<string, string>;
   /** For copilot profile: the copilot config */
   copilotConfig?: CopilotConfig;
+  /** For composite variants: true when variant mixes providers per tier */
+  isComposite?: boolean;
+  /** For composite variants: which tier is the default */
+  compositeDefaultTier?: 'opus' | 'sonnet' | 'haiku';
+  /** For composite variants: per-tier provider+model mappings */
+  compositeTiers?: {
+    opus: CompositeTierConfig;
+    sonnet: CompositeTierConfig;
+    haiku: CompositeTierConfig;
+  };
 }
 
 export interface AllProfiles {
@@ -110,24 +122,71 @@ class ProfileDetector {
     // Check CLIProxy variants first
     if (config.cliproxy?.variants?.[profileName]) {
       const variant = config.cliproxy.variants[profileName];
+
+      // Handle composite variants
+      if ('type' in variant && variant.type === 'composite') {
+        const composite = variant as CompositeVariantConfig;
+
+        // Defensive: check for missing tiers or default_tier
+        if (!composite.tiers || !composite.default_tier) {
+          console.warn(
+            `[!] Warning: Composite variant '${profileName}' has missing tiers or default_tier`
+          );
+          return null;
+        }
+
+        const defaultTierConfig = composite.tiers[composite.default_tier];
+        if (!defaultTierConfig) {
+          console.warn(
+            `[!] Warning: Composite variant '${profileName}' missing config for default tier '${composite.default_tier}'`
+          );
+          return null;
+        }
+
+        return {
+          type: 'cliproxy',
+          name: profileName,
+          target: composite.target,
+          provider: defaultTierConfig.provider as CLIProxyProfileName,
+          settingsPath: composite.settings,
+          port: composite.port,
+          isComposite: true,
+          compositeDefaultTier: composite.default_tier,
+          compositeTiers: composite.tiers,
+        };
+      }
+
+      const singleVariant = variant as CLIProxyVariantConfig;
       return {
         type: 'cliproxy',
         name: profileName,
-        provider: variant.provider as CLIProxyProfileName,
-        settingsPath: variant.settings,
-        port: variant.port,
+        target: singleVariant.target,
+        provider: singleVariant.provider as CLIProxyProfileName,
+        settingsPath: singleVariant.settings,
+        port: singleVariant.port,
       };
     }
 
-    // Check API profiles
-    if (config.profiles?.[profileName]) {
-      const profile = config.profiles[profileName];
-      // Load env from settings file
-      const settingsEnv = loadSettingsFromFile(profile.settings);
+    // Check API profiles (supports compatibility aliases, e.g. km -> kimi)
+    for (const candidate of getProfileLookupCandidates(profileName)) {
+      if (!config.profiles?.[candidate]) {
+        continue;
+      }
+
+      const profile = config.profiles[candidate];
+      const settingsPath = profile.settings;
+      const settingsEnv = loadSettingsFromFile(settingsPath);
+      const viaLegacyAlias = isLegacyProfileAlias(profileName, candidate);
+
       return {
         type: 'settings',
         name: profileName,
+        target: profile.target,
+        settingsPath,
         env: settingsEnv,
+        message: viaLegacyAlias
+          ? `Using legacy API profile "${candidate}" for "${profileName}".`
+          : undefined,
       };
     }
 
@@ -141,6 +200,10 @@ class ProfileDetector {
           type: 'account',
           created: account.created,
           last_used: account.last_used,
+          context_mode: account.context_mode,
+          context_group: account.context_group,
+          continuity_mode: account.continuity_mode,
+          bare: account.bare,
         },
       };
     }
@@ -200,11 +263,11 @@ class ProfileDetector {
     }
 
     // Priority 0: Check CLIProxy profiles (gemini, codex, agy, qwen) - OAuth-based, zero config
-    if (CLIPROXY_PROFILES.includes(profileName as CLIProxyProfileName)) {
+    if (isCLIProxyProvider(profileName)) {
       return {
         type: 'cliproxy',
         name: profileName,
-        provider: profileName as CLIProxyProfileName,
+        provider: profileName,
       };
     }
 
@@ -248,25 +311,39 @@ class ProfileDetector {
 
     // Priority 2: Check user-defined CLIProxy variants (config.cliproxy section)
     const config = this.readConfig();
+    const legacyTargetMap = (config as { profile_targets?: Record<string, TargetType> })
+      .profile_targets;
 
     if (config.cliproxy && config.cliproxy[profileName]) {
       const variant = config.cliproxy[profileName];
       return {
         type: 'cliproxy',
         name: profileName,
+        target: variant.target,
         provider: variant.provider as CLIProxyProfileName,
         settingsPath: variant.settings,
         port: variant.port,
       };
     }
 
-    // Priority 3: Check settings-based profiles (glm, kimi) - LEGACY FALLBACK
-    if (config.profiles && config.profiles[profileName]) {
-      return {
-        type: 'settings',
-        name: profileName,
-        settingsPath: config.profiles[profileName],
-      };
+    // Priority 3: Check settings-based profiles (glm, km) - LEGACY FALLBACK
+    if (config.profiles) {
+      for (const candidate of getProfileLookupCandidates(profileName)) {
+        if (!config.profiles[candidate]) {
+          continue;
+        }
+
+        const viaLegacyAlias = isLegacyProfileAlias(profileName, candidate);
+        return {
+          type: 'settings',
+          name: profileName,
+          settingsPath: config.profiles[candidate],
+          target: legacyTargetMap?.[candidate],
+          message: viaLegacyAlias
+            ? `Using legacy API profile "${candidate}" for "${profileName}".`
+            : undefined,
+        };
+      }
     }
 
     // Priority 4: Check account-based profiles (work, personal) - LEGACY FALLBACK
@@ -321,6 +398,8 @@ class ProfileDetector {
 
     // Check if settings-based default exists
     const config = this.readConfig();
+    const legacyTargetMap = (config as { profile_targets?: Record<string, TargetType> })
+      .profile_targets;
 
     if (config.profiles && config.profiles['default']) {
       const settingsPath = config.profiles['default'];
@@ -338,6 +417,7 @@ class ProfileDetector {
         type: 'settings',
         name: 'default',
         settingsPath,
+        target: legacyTargetMap?.['default'],
       };
     }
 
@@ -376,7 +456,11 @@ class ProfileDetector {
         lines.push('CLIProxy variants (unified config):');
         variants.forEach((name) => {
           const variant = unifiedConfig.cliproxy?.variants[name];
-          lines.push(`  - ${name} (${variant?.provider || 'unknown'})`);
+          const label =
+            variant && 'type' in variant && variant.type === 'composite'
+              ? 'composite'
+              : (variant as { provider?: string })?.provider || 'unknown';
+          lines.push(`  - ${name} (${label})`);
         });
       }
 

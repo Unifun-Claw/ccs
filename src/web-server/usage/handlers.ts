@@ -13,8 +13,8 @@ import {
   getCachedMonthlyData,
   getCachedSessionData,
   getCachedHourlyData,
-  clearUsageCache,
   getLastFetchTimestamp,
+  refreshUsageCache,
 } from './aggregator';
 
 // ============================================================================
@@ -549,6 +549,7 @@ export async function handleSessions(
       cost: Math.round(s.totalCost * 100) / 100,
       lastActivity: s.lastActivity,
       modelsUsed: s.modelsUsed,
+      target: s.target || 'claude',
     }));
 
     res.json({
@@ -601,9 +602,13 @@ export async function handleMonthly(
   }
 }
 
-export function handleRefresh(_req: Request, res: Response): void {
-  clearUsageCache();
-  res.json({ success: true, message: 'Usage cache cleared' });
+export async function handleRefresh(_req: Request, res: Response): Promise<void> {
+  try {
+    await refreshUsageCache();
+    res.json({ success: true, message: 'Usage cache refreshed' });
+  } catch (error) {
+    errorResponse(res, error, 'Failed to refresh usage cache');
+  }
 }
 
 export function handleStatus(_req: Request, res: Response): void {

@@ -29,16 +29,115 @@ import {
 } from '../../management/oauth-port-diagnostics';
 import {
   OAuthOptions,
-  OAUTH_CALLBACK_PORTS,
+  DEFAULT_KIRO_AUTH_METHOD,
+  getKiroCallbackPort,
+  getKiroCLIAuthFlag,
+  isKiroCLIAuthMethod,
+  isKiroDeviceCodeMethod,
   getOAuthConfig,
   ProviderOAuthConfig,
   CLIPROXY_CALLBACK_PROVIDER_MAP,
+  getPasteCallbackStartPath,
+  getManagementOAuthCallbackPath,
+  normalizeKiroAuthMethod,
 } from './auth-types';
 import { isHeadlessEnvironment, killProcessOnPort, showStep } from './environment-detector';
 import { getProviderTokenDir, isAuthenticated, registerAccountFromToken } from './token-manager';
 import { executeOAuthProcess } from './oauth-process';
 import { importKiroToken } from './kiro-import';
-import { getProxyTarget, buildProxyUrl, buildManagementHeaders } from '../proxy-target-resolver';
+import {
+  getProxyTarget,
+  buildProxyUrl,
+  buildManagementHeaders,
+  type ProxyTarget,
+} from '../proxy-target-resolver';
+import {
+  checkNewAccountConflict,
+  warnNewAccountConflict,
+  warnOAuthBanRisk,
+  warnPossible403Ban,
+} from '../account-safety';
+import { ensureCliAntigravityResponsibility } from '../antigravity-responsibility';
+
+interface PasteCallbackStartData {
+  url?: string;
+  auth_url?: string;
+  state?: string;
+  status?: string;
+}
+
+const PASTE_CALLBACK_AUTH_URL_POLL_INTERVAL_MS = 3000;
+
+export async function requestPasteCallbackStart(
+  provider: CLIProxyProvider,
+  target: ProxyTarget
+): Promise<PasteCallbackStartData> {
+  const startPath = getPasteCallbackStartPath(provider);
+  const response = await fetch(buildProxyUrl(target, startPath), {
+    ...(provider === 'kiro' ? { method: 'POST' } : {}),
+    headers:
+      provider === 'kiro'
+        ? buildManagementHeaders(target, { 'Content-Type': 'application/json' })
+        : buildManagementHeaders(target),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OAuth start failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as PasteCallbackStartData;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function resolvePasteCallbackAuthUrl(
+  target: ProxyTarget,
+  startData: PasteCallbackStartData,
+  timeoutMs: number,
+  pollIntervalMs: number = PASTE_CALLBACK_AUTH_URL_POLL_INTERVAL_MS
+): Promise<string | null> {
+  const authUrl = startData.url || startData.auth_url;
+  if (authUrl) {
+    return authUrl;
+  }
+
+  const state = startData.state;
+  if (!state) {
+    return null;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const response = await fetch(
+      buildProxyUrl(target, `/v0/management/get-auth-status?state=${encodeURIComponent(state)}`),
+      { headers: buildManagementHeaders(target) }
+    );
+
+    if (response.ok) {
+      const statusData = (await response.json()) as PasteCallbackStartData;
+      const polledAuthUrl = statusData.url || statusData.auth_url;
+
+      if (polledAuthUrl) {
+        return polledAuthUrl;
+      }
+
+      if (statusData.status === 'error' || statusData.status === 'device_code') {
+        return null;
+      }
+    }
+
+    if (Date.now() + pollIntervalMs >= deadline) {
+      break;
+    }
+
+    await sleep(pollIntervalMs);
+  }
+
+  return null;
+}
 
 /**
  * Prompt user to add another account
@@ -54,6 +153,55 @@ async function promptAddAccount(): Promise<boolean> {
     rl.question('[?] Add another account? (y/N): ', (answer) => {
       rl.close();
       resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
+    });
+  });
+}
+
+/**
+ * Prompt user to choose OAuth mode for headless environment
+ * Returns 'paste' for paste-callback mode or 'forward' for port-forwarding
+ */
+async function promptOAuthModeChoice(callbackPort: number | null): Promise<'paste' | 'forward'> {
+  const readline = await import('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  console.log('');
+  console.log(info('Headless environment detected (SSH session)'));
+  console.log('    OAuth requires choosing a mode:');
+  console.log('');
+  console.log('    [1] Paste-callback (recommended for VPS)');
+  console.log('        Open URL in any browser, paste redirect URL back');
+  console.log('');
+  console.log('    [2] Port forwarding (advanced)');
+  if (callbackPort) {
+    console.log(`        Requires: ssh -L ${callbackPort}:localhost:${callbackPort} <USER>@<HOST>`);
+  } else {
+    console.log('        Requires SSH tunnel to callback port');
+  }
+  console.log('');
+
+  return new Promise<'paste' | 'forward'>((resolve) => {
+    let resolved = false;
+
+    // Handle Ctrl+C gracefully
+    rl.on('close', () => {
+      if (!resolved) {
+        resolved = true;
+        resolve('paste'); // Safe default on cancel
+      }
+    });
+
+    rl.question('[?] Which mode? (1/2): ', (answer) => {
+      const choice = answer.trim();
+      if (choice !== '1' && choice !== '2') {
+        console.log(info('Invalid choice, using paste-callback mode'));
+      }
+      resolved = true;
+      rl.close();
+      resolve(choice === '2' ? 'forward' : 'paste');
     });
   });
 }
@@ -213,26 +361,20 @@ async function handlePasteCallbackMode(
   console.log(info(`Starting ${oauthConfig.displayName} OAuth (paste-callback mode)...`));
 
   try {
-    // Request auth URL from CLIProxyAPI
-    // Note: Uses /oauth/${provider}/start endpoint (different from web-server routes which use
-    // /v0/management/${provider}-auth-url). Both start OAuth flows but this endpoint is simpler
-    // for CLI paste-callback mode as it directly returns the auth URL without is_webui param.
-    const startResponse = await fetch(buildProxyUrl(target, `/oauth/${provider}/start`), {
-      method: 'POST',
-      headers: buildManagementHeaders(target, { 'Content-Type': 'application/json' }),
-    });
-
-    if (!startResponse.ok) {
+    // Request auth URL from CLIProxyAPI.
+    // Kiro keeps its legacy start route because CLI auth methods do not share the generic
+    // management auth-url contract used by providers like Claude.
+    let startData: PasteCallbackStartData;
+    try {
+      startData = await requestPasteCallbackStart(provider, target);
+    } catch (error) {
+      const startError = (error as Error).message;
       console.log(fail('Failed to start OAuth flow'));
+      warnPossible403Ban(provider, startError);
       return null;
     }
 
-    const startData = (await startResponse.json()) as {
-      url?: string;
-      auth_url?: string;
-      status?: string;
-    };
-    const authUrl = startData.url || startData.auth_url;
+    const authUrl = await resolvePasteCallbackAuthUrl(target, startData, OAUTH_STATE_TIMEOUT_MS);
 
     if (!authUrl) {
       console.log(fail('No authorization URL received'));
@@ -241,9 +383,9 @@ async function handlePasteCallbackMode(
 
     // Display auth URL in box
     console.log('');
-    console.log('  +--------------------------------------------------------------+');
-    console.log('  |  Open this URL in any browser:                               |');
-    console.log('  +--------------------------------------------------------------+');
+    console.log('  ╔══════════════════════════════════════════════════════════════╗');
+    console.log('  ║  Open this URL in any browser:                               ║');
+    console.log('  ╚══════════════════════════════════════════════════════════════╝');
     console.log('');
     console.log(`    ${authUrl}`);
     console.log('');
@@ -309,8 +451,7 @@ async function handlePasteCallbackMode(
 
     const callbackProvider = CLIPROXY_CALLBACK_PROVIDER_MAP[provider] || provider;
 
-    // Note: /oauth-callback is a CLIProxyAPI endpoint (not /v0/management prefix)
-    const callbackResponse = await fetch(buildProxyUrl(target, '/oauth-callback'), {
+    const callbackResponse = await fetch(buildProxyUrl(target, getManagementOAuthCallbackPath()), {
       method: 'POST',
       headers: buildManagementHeaders(target, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -325,12 +466,25 @@ async function handlePasteCallbackMode(
     };
 
     if (!callbackResponse.ok || callbackData.status === 'error') {
-      console.log(fail(callbackData.error || 'OAuth callback failed'));
+      const callbackError =
+        callbackData.error || `OAuth callback failed with status ${callbackResponse.status}`;
+      console.log(fail(callbackError));
+      warnPossible403Ban(provider, callbackError);
       return null;
     }
 
     console.log(ok('Authentication successful!'));
-    return registerAccountFromToken(provider, tokenDir, nickname);
+    const account = registerAccountFromToken(provider, tokenDir, nickname);
+
+    // Account safety: check for cross-provider conflicts
+    if (account?.email) {
+      const conflicts = checkNewAccountConflict(provider, account.email);
+      if (conflicts) {
+        warnNewAccountConflict(account.email, conflicts);
+      }
+    }
+
+    return account;
   } catch (error) {
     if (verbose) {
       console.log(fail(`Error: ${(error as Error).message}`));
@@ -352,8 +506,30 @@ export async function triggerOAuth(
   options: OAuthOptions = {}
 ): Promise<AccountInfo | null> {
   const oauthConfig = getOAuthConfig(provider);
+  warnOAuthBanRisk(provider);
   const { verbose = false, add = false, fromUI = false, noIncognito = true } = options;
+  const acceptAgyRisk = options.acceptAgyRisk === true;
   let { nickname } = options;
+  const resolvedKiroMethod =
+    provider === 'kiro' ? normalizeKiroAuthMethod(options.kiroMethod) : DEFAULT_KIRO_AUTH_METHOD;
+
+  if (provider === 'agy') {
+    if (fromUI && !acceptAgyRisk) {
+      console.log(fail('Antigravity OAuth blocked: responsibility acknowledgement is missing.'));
+      return null;
+    }
+
+    if (!fromUI) {
+      const acknowledged = await ensureCliAntigravityResponsibility({
+        context: 'oauth',
+        acceptedByFlag: acceptAgyRisk,
+      });
+      if (!acknowledged) {
+        console.log(info('Cancelled'));
+        return null;
+      }
+    }
+  }
 
   // Check for existing accounts
   const existingAccounts = getProviderAccounts(provider);
@@ -384,10 +560,44 @@ export async function triggerOAuth(
     return null;
   }
 
-  const callbackPort = OAUTH_PORTS[provider];
+  if (provider === 'kiro' && resolvedKiroMethod === 'github') {
+    console.log(fail('Kiro GitHub login is only available in Dashboard management OAuth flow.'));
+    console.log('    Use: ccs config -> Accounts -> Add Kiro account -> Method: GitHub OAuth');
+    return null;
+  }
+
+  const callbackPort =
+    provider === 'kiro' ? getKiroCallbackPort(resolvedKiroMethod) : OAUTH_PORTS[provider];
   const isCLI = !fromUI;
   const headless = options.headless ?? isHeadlessEnvironment();
-  const isDeviceCodeFlow = callbackPort === null;
+  const isDeviceCodeFlow =
+    provider === 'kiro' ? isKiroDeviceCodeMethod(resolvedKiroMethod) : callbackPort === null;
+
+  let authFlag = oauthConfig.authFlag;
+  if (provider === 'kiro') {
+    if (!isKiroCLIAuthMethod(resolvedKiroMethod)) {
+      console.log(fail(`Kiro auth method '${resolvedKiroMethod}' is not supported by CLI flow.`));
+      console.log('    Use Dashboard management OAuth for this method.');
+      return null;
+    }
+    authFlag = getKiroCLIAuthFlag(resolvedKiroMethod);
+  }
+
+  // Interactive mode selection for headless environments
+  // Skip if explicit mode flag provided or device code flow (no callback needed)
+  if (headless && !options.pasteCallback && !options.portForward && !isDeviceCodeFlow) {
+    // Non-interactive environment (piped input) - default to paste mode
+    if (!process.stdin.isTTY) {
+      const tokenDir = getProviderTokenDir(provider);
+      return handlePasteCallbackMode(provider, oauthConfig, verbose, tokenDir, nickname);
+    }
+    const mode = await promptOAuthModeChoice(callbackPort);
+    if (mode === 'paste') {
+      const tokenDir = getProviderTokenDir(provider);
+      return handlePasteCallbackMode(provider, oauthConfig, verbose, tokenDir, nickname);
+    }
+    // mode === 'forward' continues to existing port-forwarding flow below
+  }
 
   if (existingAccounts.length > 0 && !add) {
     console.log('');
@@ -417,7 +627,7 @@ export async function triggerOAuth(
   const { binaryPath, tokenDir, configPath } = prepared;
 
   // Free callback port if needed (only for authorization code flows)
-  const localCallbackPort = OAUTH_CALLBACK_PORTS[provider];
+  const localCallbackPort = callbackPort;
   if (localCallbackPort) {
     const killed = killProcessOnPort(localCallbackPort, verbose);
     if (killed && verbose) {
@@ -426,7 +636,7 @@ export async function triggerOAuth(
   }
 
   // Build args
-  const args = ['--config', configPath, oauthConfig.authFlag];
+  const args = ['--config', configPath, authFlag];
   if (headless) {
     args.push('--no-browser');
   }
@@ -476,6 +686,14 @@ export async function triggerOAuth(
     console.log(info('Tip: To save your AWS login credentials for future sessions:'));
     console.log('       Use: ccs kiro --no-incognito');
     console.log('       Or enable "Kiro: Use normal browser" in: ccs config');
+  }
+
+  // Account safety: check for cross-provider conflicts
+  if (account?.email) {
+    const conflicts = checkNewAccountConflict(provider, account.email);
+    if (conflicts) {
+      warnNewAccountConflict(account.email, conflicts);
+    }
   }
 
   return account;

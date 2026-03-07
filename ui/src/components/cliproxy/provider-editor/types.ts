@@ -2,7 +2,7 @@
  * Type definitions for ProviderEditor components
  */
 
-import type { AuthStatus, OAuthAccount } from '@/lib/api-client';
+import type { AuthStatus, OAuthAccount, CliTarget } from '@/lib/api-client';
 import type { ProviderCatalog } from '../provider-model-selector';
 
 export interface SettingsResponse {
@@ -27,6 +27,8 @@ export interface ProviderEditorProps {
   isRemoteMode?: boolean;
   /** Port number for variant (for display in header) */
   port?: number;
+  /** Default execution target for this profile/variant */
+  defaultTarget?: CliTarget;
   onAddAccount: () => void;
   onSetDefault: (accountId: string) => void;
   onRemoveAccount: (accountId: string) => void;
@@ -61,7 +63,7 @@ export interface AccountItemProps {
   /** Solo mode mutation in progress */
   isSoloingAccount?: boolean;
   privacyMode?: boolean;
-  /** Show quota bar (only for 'agy' provider) */
+  /** Show quota bar for providers with quota API support */
   showQuota?: boolean;
   /** Enable checkbox for multi-select */
   selectable?: boolean;
@@ -113,6 +115,12 @@ export interface ModelConfigSectionProps {
   sonnetModel?: string;
   haikuModel?: string;
   providerModels: Array<{ id: string; owned_by: string }>;
+  /** Provider name for display */
+  provider: string;
+  /** Whether extended context (1M tokens) is enabled */
+  extendedContextEnabled?: boolean;
+  /** Callback when extended context toggle changes */
+  onExtendedContextToggle?: (enabled: boolean) => void;
   onApplyPreset: (updates: Record<string, string>) => void;
   onUpdateEnvValue: (key: string, value: string) => void;
   onOpenCustomPreset: () => void;
@@ -133,6 +141,10 @@ export interface UseProviderEditorReturn {
   opusModel?: string;
   sonnetModel?: string;
   haikuModel?: string;
+  /** Whether extended context (1M tokens) is enabled */
+  extendedContextEnabled: boolean;
+  /** Toggle extended context on/off */
+  toggleExtendedContext: (enabled: boolean) => void;
   handleRawJsonChange: (value: string) => void;
   updateEnvValue: (key: string, value: string) => void;
   updateEnvValues: (updates: Record<string, string>) => void;

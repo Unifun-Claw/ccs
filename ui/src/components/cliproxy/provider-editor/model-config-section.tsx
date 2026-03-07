@@ -3,10 +3,13 @@
  * Presets and model mapping configuration UI
  */
 
+import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Sparkles, Zap, Star, X, Plus } from 'lucide-react';
 import { FlexibleModelSelector } from '../provider-model-selector';
+import { ExtendedContextToggle } from '../extended-context-toggle';
+import { stripExtendedContextSuffix } from '@/lib/extended-context-utils';
 import type { ModelConfigSectionProps } from './types';
 
 export function ModelConfigSection({
@@ -17,6 +20,9 @@ export function ModelConfigSection({
   sonnetModel,
   haikuModel,
   providerModels,
+  provider,
+  extendedContextEnabled,
+  onExtendedContextToggle,
   onApplyPreset,
   onUpdateEnvValue,
   onOpenCustomPreset,
@@ -24,6 +30,14 @@ export function ModelConfigSection({
   isDeletePending,
 }: ModelConfigSectionProps) {
   const showPresets = (catalog && catalog.models.length > 0) || savedPresets.length > 0;
+
+  // Find current model entry to check for extended context support
+  // Strip [1m] suffix when looking up in catalog since catalog IDs don't have suffix
+  const currentModelEntry = useMemo(() => {
+    if (!catalog || !currentModel) return undefined;
+    const baseModelId = stripExtendedContextSuffix(currentModel);
+    return catalog.models.find((m) => m.id === baseModelId);
+  }, [catalog, currentModel]);
 
   return (
     <>
@@ -118,6 +132,12 @@ export function ModelConfigSection({
         <p className="text-xs text-muted-foreground mb-4">
           Configure which models to use for each tier
         </p>
+        {provider === 'codex' && (
+          <p className="text-[11px] text-muted-foreground mb-3 rounded-md border bg-muted/30 px-2.5 py-2">
+            Codex tip: suffixes <code>-medium</code>, <code>-high</code>, and <code>-xhigh</code>{' '}
+            pin reasoning effort. Unsuffixed models use Thinking settings.
+          </p>
+        )}
         <div className="space-y-4">
           <FlexibleModelSelector
             label="Default Model"
@@ -127,6 +147,15 @@ export function ModelConfigSection({
             catalog={catalog}
             allModels={providerModels}
           />
+          {/* Extended Context Toggle - only shows for models that support it */}
+          {currentModelEntry?.extendedContext && onExtendedContextToggle && (
+            <ExtendedContextToggle
+              model={currentModelEntry}
+              provider={provider}
+              enabled={extendedContextEnabled ?? false}
+              onToggle={onExtendedContextToggle}
+            />
+          )}
           <FlexibleModelSelector
             label="Opus (Most capable)"
             description="For complex reasoning tasks"

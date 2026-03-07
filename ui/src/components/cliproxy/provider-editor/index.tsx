@@ -16,7 +16,9 @@ import {
   useCreatePreset,
   useDeletePreset,
 } from '@/hooks/use-cliproxy';
-import { CLIPROXY_PORT } from '@/lib/preset-utils';
+import { CLIPROXY_DEFAULT_PORT } from '@/lib/preset-utils';
+import { isDeniedAgyModelId } from '@/lib/utils';
+import i18n from '@/lib/i18n';
 import { usePrivacy } from '@/contexts/privacy-context';
 import { useProviderEditor } from './use-provider-editor';
 import { CustomPresetDialog } from './custom-preset-dialog';
@@ -35,6 +37,7 @@ export function ProviderEditor({
   baseProvider,
   isRemoteMode,
   port,
+  defaultTarget,
   onAddAccount,
   onSetDefault,
   onRemoveAccount,
@@ -55,10 +58,23 @@ export function ProviderEditor({
   const { data: presetsData } = usePresets(provider);
   const createPresetMutation = useCreatePreset();
   const deletePresetMutation = useDeletePreset();
-  const savedPresets = presetsData?.presets || [];
 
   // Use baseProvider for model filtering (for variants, this is the parent provider)
   const modelFilterProvider = baseProvider || provider;
+  const isAgyProvider = modelFilterProvider.toLowerCase() === 'agy';
+
+  const savedPresets = useMemo(() => {
+    const presets = presetsData?.presets || [];
+    if (!isAgyProvider) return presets;
+
+    return presets.filter(
+      (preset) =>
+        !isDeniedAgyModelId(preset.default) &&
+        !isDeniedAgyModelId(preset.opus) &&
+        !isDeniedAgyModelId(preset.sonnet) &&
+        !isDeniedAgyModelId(preset.haiku)
+    );
+  }, [isAgyProvider, presetsData?.presets]);
 
   const providerModels = useMemo(() => {
     if (!modelsData?.models) return [];
@@ -70,14 +86,19 @@ export function ProviderEditor({
       iflow: ['iflow'],
       kiro: ['kiro', 'aws'],
       ghcp: ['github', 'copilot'],
+      kimi: ['kimi', 'moonshot'],
     };
     const owners = ownerMap[modelFilterProvider.toLowerCase()] || [
       modelFilterProvider.toLowerCase(),
     ];
-    return modelsData.models.filter((m) =>
-      owners.some((o) => m.owned_by.toLowerCase().includes(o))
-    );
-  }, [modelsData, modelFilterProvider]);
+    return modelsData.models.filter((m) => {
+      if (!owners.some((o) => m.owned_by.toLowerCase().includes(o))) return false;
+      if (!isAgyProvider) return true;
+      return !isDeniedAgyModelId(m.id);
+    });
+  }, [isAgyProvider, modelsData, modelFilterProvider]);
+
+  const providerRoute = (baseProvider || provider).toLowerCase();
 
   const {
     data,
@@ -91,6 +112,8 @@ export function ProviderEditor({
     opusModel,
     sonnetModel,
     haikuModel,
+    extendedContextEnabled,
+    toggleExtendedContext,
     handleRawJsonChange,
     updateEnvValue,
     updateEnvValues,
@@ -100,7 +123,16 @@ export function ProviderEditor({
     missingRequiredFields,
   } = useProviderEditor(provider);
 
-  const accounts = authStatus.accounts || [];
+  // Defensive normalization: remote/legacy payloads may omit account.provider.
+  // Fallback to current editor provider to avoid runtime crashes in account UI.
+  const accounts = useMemo(
+    () =>
+      (authStatus.accounts || []).map((account) => ({
+        ...account,
+        provider: account.provider || baseProvider || provider,
+      })),
+    [authStatus.accounts, baseProvider, provider]
+  );
 
   // Fetch effective API key for presets (uses configured value, not hardcoded)
   const { data: authTokens } = useQuery<{ apiKey: { value: string } }>({
@@ -115,9 +147,22 @@ export function ProviderEditor({
   const effectiveApiKey = authTokens?.apiKey?.value ?? 'ccs-internal-managed';
 
   const handleApplyPreset = (updates: Record<string, string>) => {
-    const effectivePort = port ?? CLIPROXY_PORT;
+    if (
+      isAgyProvider &&
+      [
+        updates.ANTHROPIC_MODEL,
+        updates.ANTHROPIC_DEFAULT_OPUS_MODEL,
+        updates.ANTHROPIC_DEFAULT_SONNET_MODEL,
+        updates.ANTHROPIC_DEFAULT_HAIKU_MODEL,
+      ].some((modelId) => typeof modelId === 'string' && isDeniedAgyModelId(modelId))
+    ) {
+      toast.error('Antigravity denylist: Claude Opus 4.5 and Claude Sonnet 4.5 are deprecated.');
+      return;
+    }
+
+    const effectivePort = port ?? CLIPROXY_DEFAULT_PORT;
     updateEnvValues({
-      ANTHROPIC_BASE_URL: `http://127.0.0.1:${effectivePort}/api/provider/${provider}`,
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${effectivePort}/api/provider/${providerRoute}`,
       ANTHROPIC_AUTH_TOKEN: effectiveApiKey,
       ...updates,
     });
@@ -125,9 +170,19 @@ export function ProviderEditor({
   };
 
   const handleCustomPresetApply = (values: ModelMappingValues, presetName?: string) => {
-    const effectivePort = port ?? CLIPROXY_PORT;
+    if (
+      isAgyProvider &&
+      [values.default, values.opus, values.sonnet, values.haiku].some((modelId) =>
+        isDeniedAgyModelId(modelId)
+      )
+    ) {
+      toast.error('Antigravity denylist: Claude Opus 4.5 and Claude Sonnet 4.5 are deprecated.');
+      return;
+    }
+
+    const effectivePort = port ?? CLIPROXY_DEFAULT_PORT;
     updateEnvValues({
-      ANTHROPIC_BASE_URL: `http://127.0.0.1:${effectivePort}/api/provider/${provider}`,
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${effectivePort}/api/provider/${providerRoute}`,
       ANTHROPIC_AUTH_TOKEN: effectiveApiKey,
       ANTHROPIC_MODEL: values.default,
       ANTHROPIC_DEFAULT_OPUS_MODEL: values.opus,
@@ -140,7 +195,16 @@ export function ProviderEditor({
 
   const handleCustomPresetSave = (values: ModelMappingValues, presetName?: string) => {
     if (!presetName) {
-      toast.error('Please enter a preset name to save');
+      toast.error(i18n.t('commonToast.enterPresetName'));
+      return;
+    }
+    if (
+      isAgyProvider &&
+      [values.default, values.opus, values.sonnet, values.haiku].some((modelId) =>
+        isDeniedAgyModelId(modelId)
+      )
+    ) {
+      toast.error('Antigravity denylist: Claude Opus 4.5 and Claude Sonnet 4.5 are deprecated.');
       return;
     }
     createPresetMutation.mutate({ profile: provider, data: { name: presetName, ...values } });
@@ -197,6 +261,8 @@ export function ProviderEditor({
                     sonnetModel={sonnetModel}
                     haikuModel={haikuModel}
                     providerModels={providerModels}
+                    extendedContextEnabled={extendedContextEnabled}
+                    onExtendedContextToggle={toggleExtendedContext}
                     onApplyPreset={handleApplyPreset}
                     onUpdateEnvValue={updateEnvValue}
                     onOpenCustomPreset={() => setCustomPresetOpen(true)}
@@ -228,6 +294,7 @@ export function ProviderEditor({
                   <ProviderInfoTab
                     provider={provider}
                     displayName={displayName}
+                    defaultTarget={defaultTarget}
                     data={data}
                     authStatus={authStatus}
                   />

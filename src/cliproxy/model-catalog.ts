@@ -6,6 +6,11 @@
  */
 
 import { CLIProxyProvider } from './types';
+import {
+  isAntigravityProvider,
+  migrateDeniedAntigravityModelAliases,
+  normalizeModelIdForProvider,
+} from './model-id-normalizer';
 
 /**
  * Thinking support configuration for a model.
@@ -50,6 +55,8 @@ export interface ModelEntry {
   deprecationReason?: string;
   /** Thinking/reasoning support configuration */
   thinking?: ThinkingSupport;
+  /** Whether model supports 1M extended context window (appends [1m] suffix) */
+  extendedContext?: boolean;
 }
 
 /**
@@ -71,43 +78,41 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
   agy: {
     provider: 'agy',
     displayName: 'Antigravity',
-    defaultModel: 'gemini-claude-opus-4-5-thinking',
+    defaultModel: 'claude-opus-4-6-thinking',
     models: [
       {
-        id: 'gemini-claude-opus-4-5-thinking',
-        name: 'Claude Opus 4.5 Thinking',
-        description: 'Most capable, extended thinking',
+        id: 'claude-opus-4-6-thinking',
+        name: 'Claude Opus 4.6 Thinking',
+        description: 'Latest flagship, extended thinking',
         thinking: {
           type: 'budget',
           min: 1024,
-          max: 100000,
-          zeroAllowed: false,
+          max: 128000,
+          zeroAllowed: true,
           dynamicAllowed: true,
         },
+        // TODO: Re-enable when Antigravity backend supports 1M context (currently 256k)
+        // extendedContext: true,
+        extendedContext: false,
       },
       {
-        id: 'gemini-claude-sonnet-4-5-thinking',
-        name: 'Claude Sonnet 4.5 Thinking',
-        description: 'Balanced with extended thinking',
+        id: 'claude-sonnet-4-6',
+        name: 'Claude Sonnet 4.6',
+        description: 'Latest Sonnet with thinking budget support',
         thinking: {
           type: 'budget',
           min: 1024,
-          max: 100000,
-          zeroAllowed: false,
+          max: 64000,
+          zeroAllowed: true,
           dynamicAllowed: true,
         },
-      },
-      {
-        id: 'gemini-claude-sonnet-4-5',
-        name: 'Claude Sonnet 4.5',
-        description: 'Fast and capable',
-        thinking: { type: 'none' },
       },
       {
         id: 'gemini-3-pro-preview',
         name: 'Gemini 3 Pro',
         description: 'Google latest model via Antigravity',
         thinking: { type: 'levels', levels: ['low', 'high'], dynamicAllowed: true },
+        extendedContext: true,
       },
     ],
   },
@@ -122,6 +127,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         tier: 'pro',
         description: 'Latest model, requires paid Google account',
         thinking: { type: 'levels', levels: ['low', 'high'], dynamicAllowed: true },
+        extendedContext: true,
       },
       {
         id: 'gemini-2.5-pro',
@@ -134,18 +140,30 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
           zeroAllowed: false,
           dynamicAllowed: true,
         },
+        extendedContext: true,
       },
     ],
   },
   codex: {
     provider: 'codex',
     displayName: 'Copilot Codex',
-    defaultModel: 'gpt-5.2-codex',
+    defaultModel: 'gpt-5.3-codex',
     models: [
+      {
+        id: 'gpt-5.3-codex',
+        name: 'GPT-5.3 Codex',
+        description: 'Supports up to xhigh effort',
+        thinking: {
+          type: 'levels',
+          levels: ['medium', 'high', 'xhigh'],
+          maxLevel: 'xhigh',
+          dynamicAllowed: false,
+        },
+      },
       {
         id: 'gpt-5.2-codex',
         name: 'GPT-5.2 Codex',
-        description: 'Full reasoning support (xhigh)',
+        description: 'Previous stable Codex model',
         thinking: {
           type: 'levels',
           levels: ['medium', 'high', 'xhigh'],
@@ -156,7 +174,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
       {
         id: 'gpt-5-mini',
         name: 'GPT-5 Mini',
-        description: 'Capped at high reasoning (no xhigh)',
+        description: 'Capped at high effort (no xhigh)',
         thinking: {
           type: 'levels',
           levels: ['medium', 'high'],
@@ -166,11 +184,60 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
       },
     ],
   },
+  kimi: {
+    provider: 'kimi',
+    displayName: 'Kimi (Moonshot)',
+    defaultModel: 'kimi-k2.5',
+    models: [
+      {
+        id: 'kimi-k2.5',
+        name: 'Kimi K2.5',
+        description: 'Latest multimodal model (262K context)',
+        thinking: {
+          type: 'budget',
+          min: 1024,
+          max: 32000,
+          zeroAllowed: true,
+          dynamicAllowed: true,
+        },
+      },
+      {
+        id: 'kimi-k2-thinking',
+        name: 'Kimi K2 Thinking',
+        description: 'Extended reasoning model',
+        thinking: {
+          type: 'budget',
+          min: 1024,
+          max: 32000,
+          zeroAllowed: true,
+          dynamicAllowed: true,
+        },
+      },
+      {
+        id: 'kimi-k2',
+        name: 'Kimi K2',
+        description: 'Flagship coding model',
+      },
+    ],
+  },
   claude: {
     provider: 'claude',
     displayName: 'Claude (Anthropic)',
     defaultModel: 'claude-sonnet-4-5-20250929',
     models: [
+      {
+        id: 'claude-opus-4-6',
+        name: 'Claude Opus 4.6',
+        description: 'Latest flagship model',
+        thinking: {
+          type: 'budget',
+          min: 1024,
+          max: 128000,
+          zeroAllowed: false,
+          dynamicAllowed: true,
+        },
+        extendedContext: true,
+      },
       {
         id: 'claude-opus-4-5-20251101',
         name: 'Claude Opus 4.5',
@@ -182,6 +249,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
           zeroAllowed: false,
           dynamicAllowed: true,
         },
+        extendedContext: true,
       },
       {
         id: 'claude-sonnet-4-5-20250929',
@@ -194,6 +262,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
           zeroAllowed: false,
           dynamicAllowed: true,
         },
+        extendedContext: true,
       },
       {
         id: 'claude-sonnet-4-20250514',
@@ -206,6 +275,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
           zeroAllowed: false,
           dynamicAllowed: true,
         },
+        extendedContext: true,
       },
       {
         id: 'claude-haiku-4-5-20251001',
@@ -239,7 +309,20 @@ export function findModel(provider: CLIProxyProvider, modelId: string): ModelEnt
   const catalog = MODEL_CATALOG[provider];
   if (!catalog || !modelId) return undefined;
   const normalizedId = modelId.trim().toLowerCase();
-  return catalog.models.find((m) => m.id.toLowerCase() === normalizedId);
+  const providerNormalizedId = normalizeModelIdForProvider(normalizedId, provider)
+    .trim()
+    .toLowerCase();
+  const lookupCandidates = new Set([normalizedId, providerNormalizedId]);
+  if (isAntigravityProvider(provider)) {
+    const migratedRaw = migrateDeniedAntigravityModelAliases(normalizedId).trim().toLowerCase();
+    const migratedProvider = migrateDeniedAntigravityModelAliases(providerNormalizedId)
+      .trim()
+      .toLowerCase();
+    lookupCandidates.add(migratedRaw);
+    lookupCandidates.add(migratedProvider);
+  }
+
+  return catalog.models.find((m) => lookupCandidates.has(m.id.toLowerCase()));
 }
 
 /**
@@ -306,4 +389,22 @@ export function getModelMaxLevel(
 export function supportsThinking(provider: CLIProxyProvider, modelId: string): boolean {
   const thinking = getModelThinkingSupport(provider, modelId);
   return thinking !== undefined && thinking.type !== 'none';
+}
+
+/**
+ * Check if model supports extended context (1M tokens).
+ * Returns true if model has extendedContext: true in catalog.
+ */
+export function supportsExtendedContext(provider: CLIProxyProvider, modelId: string): boolean {
+  const model = findModel(provider, modelId);
+  return model?.extendedContext === true;
+}
+
+/**
+ * Check if model is a native Gemini model (not Claude via Antigravity).
+ * Native Gemini models get extended context auto-enabled.
+ */
+export function isNativeGeminiModel(modelId: string): boolean {
+  const lower = modelId.toLowerCase();
+  return lower.startsWith('gemini-');
 }

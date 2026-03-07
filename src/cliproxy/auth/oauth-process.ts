@@ -7,6 +7,7 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import { ok, fail, info, warn } from '../../utils/ui';
+import { killWithEscalation } from '../../utils/process-utils';
 import { tryKiroImport } from './kiro-import';
 import { CLIProxyProvider } from '../types';
 import { AccountInfo } from '../account-manager';
@@ -216,13 +217,67 @@ function displayUrlFromStderr(
   }
 }
 
+const ANSI_ESCAPE_REGEX = /\x1b\[[0-9;]*m/g;
+
+export function extractLikelyAuthFailureFromStderr(
+  provider: CLIProxyProvider,
+  stderrData: string
+): string | null {
+  // Keep this scoped to ghcp to avoid over-classifying other providers.
+  if (provider !== 'ghcp') {
+    return null;
+  }
+
+  if (!stderrData.trim()) {
+    return null;
+  }
+
+  const normalizedLines = stderrData
+    .split('\n')
+    .map((line) => line.replace(ANSI_ESCAPE_REGEX, '').trim())
+    .filter(Boolean)
+    .map((line) => {
+      const messageIndex = line.indexOf('msg="');
+      if (messageIndex >= 0) {
+        const message = line
+          .slice(messageIndex + 5)
+          .replace(/"$/, '')
+          .trim();
+        if (message) {
+          return message;
+        }
+      }
+      return line;
+    });
+
+  const prioritizedPatterns = [
+    /github copilot authentication failed:\s*(.+)/i,
+    /authentication failed:\s*(.+)/i,
+    /failed to verify copilot access[^:]*:\s*(.+)/i,
+    /failed to save auth:\s*(.+)/i,
+  ];
+
+  for (let i = normalizedLines.length - 1; i >= 0; i--) {
+    const line = normalizedLines[i];
+    for (const pattern of prioritizedPatterns) {
+      const match = line.match(pattern);
+      if (match?.[1]?.trim()) {
+        return match[1].trim().slice(0, 240);
+      }
+    }
+  }
+
+  return null;
+}
+
 /** Handle token not found after successful process exit */
 async function handleTokenNotFound(
   provider: CLIProxyProvider,
   callbackPort: number | null,
   tokenDir: string,
   nickname: string | undefined,
-  verbose: boolean
+  verbose: boolean,
+  failureReason?: string
 ): Promise<AccountInfo | null> {
   // Kiro-specific: Try auto-import from Kiro IDE
   if (provider === 'kiro') {
@@ -247,6 +302,22 @@ async function handleTokenNotFound(
 
   // Default behavior for other providers
   console.log('');
+
+  if (failureReason) {
+    // Sanitize internal URLs/paths from failure reason to avoid leaking infrastructure details
+    const sanitizedReason = failureReason
+      .replace(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)[^\s]*/gi, '[internal-url]')
+      .replace(/\/(?:root|home|opt|tmp|var)\/[^\s]*/g, '[path]');
+    console.log(fail('Authentication completed but token was not persisted'));
+    console.log(`    ${sanitizedReason}`);
+    console.log('');
+    console.log('This usually means provider-side authorization was accepted,');
+    console.log('but CLIProxy failed a post-auth verification or token save step.');
+    console.log('');
+    console.log(`Try: ccs ${provider} --auth --verbose`);
+    return null;
+  }
+
   console.log(fail('Token not found after authentication'));
   console.log('');
   console.log('The browser showed success but callback was not received.');
@@ -333,8 +404,8 @@ export function executeOAuthProcess(options: OAuthProcessOptions): Promise<Accou
     // H8: Also clear stdinKeepalive interval to prevent memory leak
     const cleanup = () => {
       if (stdinKeepalive) clearInterval(stdinKeepalive);
-      if (authProcess && !authProcess.killed) {
-        authProcess.kill('SIGTERM');
+      if (authProcess && authProcess.exitCode === null) {
+        killWithEscalation(authProcess);
       }
     };
     process.on('SIGINT', cleanup);
@@ -358,9 +429,9 @@ export function executeOAuthProcess(options: OAuthProcessOptions): Promise<Accou
 
     // Listen for external cancel signal
     const handleCancel = (cancelledSessionId: string) => {
-      if (cancelledSessionId === state.sessionId && authProcess && !authProcess.killed) {
+      if (cancelledSessionId === state.sessionId && authProcess && authProcess.exitCode === null) {
         log('Session cancelled externally');
-        authProcess.kill('SIGTERM');
+        killWithEscalation(authProcess);
       }
     };
     authSessionEvents.on('session:cancelled', handleCancel);
@@ -425,7 +496,8 @@ export function executeOAuthProcess(options: OAuthProcessOptions): Promise<Accou
     }, 2000);
 
     // Timeout handling
-    const timeoutMs = headless ? 300000 : 120000;
+    // Device code flows need longer timeout to match CLIProxy binary's polling window (60 attempts × 5s = 300s)
+    const timeoutMs = headless || isDeviceCodeFlow ? 300000 : 120000;
     const timeout = setTimeout(() => {
       // H7: Clear stdin keepalive interval
       if (stdinKeepalive) clearInterval(stdinKeepalive);
@@ -435,9 +507,9 @@ export function executeOAuthProcess(options: OAuthProcessOptions): Promise<Accou
       authSessionEvents.removeListener('session:cancelled', handleCancel);
       unregisterAuthSession(state.sessionId);
       cancelProjectSelection(state.sessionId);
-      authProcess.kill();
+      killWithEscalation(authProcess);
       console.log('');
-      console.log(fail(`OAuth timed out after ${headless ? 5 : 2} minutes`));
+      console.log(fail(`OAuth timed out after ${timeoutMs / 60000} minutes`));
       for (const line of getTimeoutTroubleshooting(provider, callbackPort ?? null)) {
         console.log(line);
       }
@@ -468,11 +540,13 @@ export function executeOAuthProcess(options: OAuthProcessOptions): Promise<Accou
 
           resolve(registerAccountFromToken(provider, tokenDir, nickname));
         } else {
+          const failureReason = extractLikelyAuthFailureFromStderr(provider, state.stderrData);
+
           // Emit device code failure event for UI
           if (isDeviceCodeFlow && state.deviceCodeDisplayed) {
             deviceCodeEvents.emit('deviceCode:failed', {
               sessionId: state.sessionId,
-              error: 'Token not found after authentication',
+              error: failureReason || 'Token not found after authentication',
             });
           }
 
@@ -482,7 +556,8 @@ export function executeOAuthProcess(options: OAuthProcessOptions): Promise<Accou
             callbackPort,
             tokenDir,
             nickname,
-            verbose
+            verbose,
+            failureReason || undefined
           );
           resolve(account);
         }

@@ -13,6 +13,9 @@ import { isDaemonRunning, startDaemon } from './copilot-daemon';
 import { ensureCopilotApi } from './copilot-package-manager';
 import { CopilotStatus } from './types';
 import { fail, info, ok } from '../utils/ui';
+import { getWebSearchHookEnv } from '../utils/websearch-manager';
+import { getImageAnalysisHookEnv } from '../utils/hooks';
+import { stripClaudeCodeEnv } from '../utils/shell-executor';
 
 /**
  * Get full copilot status (auth + daemon).
@@ -36,7 +39,10 @@ export async function getCopilotStatus(config: CopilotConfig): Promise<CopilotSt
  * Generate environment variables for Claude Code to use copilot-api.
  * Uses model mapping for opus/sonnet/haiku tiers if configured.
  */
-export function generateCopilotEnv(config: CopilotConfig): Record<string, string> {
+export function generateCopilotEnv(
+  config: CopilotConfig,
+  claudeConfigDir?: string
+): Record<string, string> {
   // Use mapped models if configured, otherwise fall back to default model
   const opusModel = config.opus_model || config.model;
   const sonnetModel = config.sonnet_model || config.model;
@@ -56,6 +62,7 @@ export function generateCopilotEnv(config: CopilotConfig): Record<string, string
     // Disable non-essential traffic to avoid rate limiting
     DISABLE_NON_ESSENTIAL_MODEL_CALLS: '1',
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    ...(claudeConfigDir ? { CLAUDE_CONFIG_DIR: claudeConfigDir } : {}),
   };
 }
 
@@ -68,7 +75,9 @@ export function generateCopilotEnv(config: CopilotConfig): Record<string, string
  */
 export async function executeCopilotProfile(
   config: CopilotConfig,
-  claudeArgs: string[]
+  claudeArgs: string[],
+  claudeConfigDir?: string,
+  claudeCliPath: string = 'claude'
 ): Promise<number> {
   // Ensure copilot-api is installed (auto-install if missing, auto-update if outdated)
   try {
@@ -87,7 +96,7 @@ export async function executeCopilotProfile(
   if (!isCopilotApiInstalled()) {
     console.error(fail('copilot-api is not installed.'));
     console.error('');
-    console.error('Install with: ccs copilot --install');
+    console.error('Install/repair by running: ccs copilot start');
     return 1;
   }
 
@@ -117,7 +126,9 @@ export async function executeCopilotProfile(
     } else {
       console.error(fail('copilot-api daemon is not running.'));
       console.error('');
-      console.error('Start the daemon manually:');
+      console.error('Start the daemon:');
+      console.error('  ccs copilot start');
+      console.error('Fallback manual command:');
       console.error(`  npx copilot-api start --port ${config.port}`);
       console.error('');
       console.error('Or enable auto_start in config:');
@@ -127,25 +138,30 @@ export async function executeCopilotProfile(
   }
 
   // Generate environment for Claude
-  const copilotEnv = generateCopilotEnv(config);
+  const copilotEnv = generateCopilotEnv(config, claudeConfigDir);
 
   // Get global env vars (DISABLE_TELEMETRY, etc.) for third-party profiles
   const globalEnvConfig = getGlobalEnvConfig();
   const globalEnv = globalEnvConfig.enabled ? globalEnvConfig.env : {};
 
-  // Merge with current environment (global env first, copilot overrides)
-  const env = {
+  // Merge with current environment (global env first, copilot overrides, then hook env vars)
+  const webSearchEnv = getWebSearchHookEnv();
+  const imageAnalysisEnv = getImageAnalysisHookEnv('copilot');
+  const env = stripClaudeCodeEnv({
     ...process.env,
     ...globalEnv,
     ...copilotEnv,
-  };
+    ...webSearchEnv,
+    ...imageAnalysisEnv,
+    CCS_PROFILE_TYPE: 'copilot',
+  });
 
   console.log(info(`Using GitHub Copilot proxy (model: ${config.model})`));
   console.log('');
 
   // Spawn Claude CLI
   return new Promise((resolve) => {
-    const proc = spawn('claude', claudeArgs, {
+    const proc = spawn(claudeCliPath, claudeArgs, {
       stdio: 'inherit',
       env,
       shell: process.platform === 'win32',

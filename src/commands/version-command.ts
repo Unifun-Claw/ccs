@@ -6,10 +6,10 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
-import * as os from 'os';
 import { initUI, header, subheader, color, warn } from '../utils/ui';
-import { getConfigPath } from '../utils/config-manager';
+import { getActiveConfigPath, getCcsDir } from '../utils/config-manager';
 import { getVersion } from '../utils/version';
+import { getProfileLookupCandidates } from '../utils/profile-compat';
 
 /**
  * Handle version command
@@ -23,34 +23,39 @@ export async function handleVersionCommand(): Promise<void> {
   const installLocation = process.argv[1] || '(not found)';
   console.log(`  ${color('Location:'.padEnd(17), 'info')} ${installLocation}`);
 
-  const ccsDir = path.join(os.homedir(), '.ccs');
+  const ccsDir = getCcsDir();
   console.log(`  ${color('CCS Directory:'.padEnd(17), 'info')} ${ccsDir}`);
 
-  const configPath = getConfigPath();
+  const configPath = getActiveConfigPath();
   console.log(`  ${color('Config:'.padEnd(17), 'info')} ${configPath}`);
 
-  const profilesJson = path.join(os.homedir(), '.ccs', 'profiles.json');
+  const profilesJson = path.join(ccsDir, 'profiles.json');
   console.log(`  ${color('Profiles:'.padEnd(17), 'info')} ${profilesJson}`);
 
   // Delegation status
-  const delegationSessionsPath = path.join(os.homedir(), '.ccs', 'delegation-sessions.json');
+  const delegationSessionsPath = path.join(ccsDir, 'delegation-sessions.json');
   const delegationConfigured = fs.existsSync(delegationSessionsPath);
 
   const readyProfiles: string[] = [];
 
   // Check for profiles with valid API keys
-  for (const profile of ['glm', 'kimi']) {
-    const settingsPath = path.join(os.homedir(), '.ccs', `${profile}.settings.json`);
-    if (fs.existsSync(settingsPath)) {
-      try {
-        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-        const apiKey = settings.env?.ANTHROPIC_AUTH_TOKEN;
-        if (apiKey && !apiKey.match(/YOUR_.*_API_KEY_HERE/) && !apiKey.match(/sk-test.*/)) {
-          readyProfiles.push(profile);
-        }
-      } catch (_error) {
-        // Invalid JSON, skip
+  for (const profile of ['glm', 'km']) {
+    const settingsPath = getProfileLookupCandidates(profile)
+      .map((candidate) => path.join(ccsDir, `${candidate}.settings.json`))
+      .find((candidatePath) => fs.existsSync(candidatePath));
+
+    if (!settingsPath) {
+      continue;
+    }
+
+    try {
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      const apiKey = settings.env?.ANTHROPIC_AUTH_TOKEN;
+      if (apiKey && !apiKey.match(/YOUR_.*_API_KEY_HERE/) && !apiKey.match(/sk-test.*/)) {
+        readyProfiles.push(profile);
       }
+    } catch (_error) {
+      // Invalid JSON, skip
     }
   }
 

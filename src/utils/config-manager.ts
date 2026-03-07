@@ -1,7 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { Config, isConfig, Settings, isSettings, CLIProxyVariantsConfig } from '../types';
+import {
+  Config,
+  isConfig,
+  Settings,
+  isSettings,
+  CLIProxyVariantsConfig,
+  CLIProxyVariantConfig,
+} from '../types';
 import { expandPath, error } from './helpers';
 import { info } from './ui';
 import { isUnifiedMode, loadOrCreateUnifiedConfig } from '../config/unified-config-loader';
@@ -9,6 +16,18 @@ import { isUnifiedMode, loadOrCreateUnifiedConfig } from '../config/unified-conf
 // TODO: Replace with proper imports after converting these files
 // const { ErrorManager } = require('./error-manager');
 // const RecoveryManager = require('./recovery-manager');
+
+// Module-level state for --config-dir CLI flag override
+let _globalConfigDir: string | undefined;
+
+/**
+ * Set global config directory from --config-dir CLI flag.
+ * Must be called before any config loading.
+ * Pass undefined to clear (useful for tests).
+ */
+export function setGlobalConfigDir(dir: string | undefined): void {
+  _globalConfigDir = dir ? path.resolve(dir) : undefined;
+}
 
 /**
  * Get the CCS home directory (respects CCS_HOME env var for test isolation)
@@ -19,11 +38,70 @@ export function getCcsHome(): string {
 }
 
 /**
- * Get the CCS directory path (~/.ccs)
- * @returns Path to .ccs directory
+ * Resolve the CCS directory with source information.
+ * Single source of truth for precedence logic.
+ */
+function _resolveCcsDir(): { source: string; dir: string } {
+  if (_globalConfigDir) return { source: '--config-dir', dir: _globalConfigDir };
+  if (process.env.CCS_DIR) return { source: 'CCS_DIR', dir: path.resolve(process.env.CCS_DIR) };
+  if (process.env.CCS_HOME)
+    return { source: 'CCS_HOME', dir: path.join(path.resolve(process.env.CCS_HOME), '.ccs') };
+  return { source: 'default', dir: path.join(os.homedir(), '.ccs') };
+}
+
+/**
+ * Get the CCS directory path.
+ * Precedence: --config-dir flag > CCS_DIR env > CCS_HOME env (legacy, appends .ccs) > ~/.ccs default
+ * @returns Path to CCS config directory
  */
 export function getCcsDir(): string {
-  return path.join(getCcsHome(), '.ccs');
+  return _resolveCcsDir().dir;
+}
+
+/**
+ * Get which source determined the CCS directory (for diagnostics).
+ * @returns [source_label, resolved_path] tuple
+ */
+export function getCcsDirSource(): [string, string] {
+  const r = _resolveCcsDir();
+  return [r.source, r.dir];
+}
+
+/**
+ * Cloud sync folder patterns for security warning.
+ */
+const CLOUD_SYNC_PATTERNS = [
+  'Dropbox',
+  'OneDrive',
+  'Google Drive',
+  'iCloud Drive',
+  'iCloudDrive',
+  'pCloud',
+  'MEGA',
+  'Box Sync',
+];
+
+/**
+ * Check if a path is under a cloud-synced folder.
+ * @returns Detected service name or null
+ */
+export function detectCloudSyncPath(dir: string): string | null {
+  const normalized = dir.replace(/\\/g, '/').toLowerCase();
+  const segments = normalized.split('/');
+  for (const pattern of CLOUD_SYNC_PATTERNS) {
+    const patternLower = pattern.toLowerCase();
+    // Exact path segment match to avoid false positives (e.g., "megauser" != "MEGA")
+    if (segments.some((s) => s === patternLower)) return pattern;
+  }
+  return null;
+}
+
+/**
+ * Get CCS hooks directory (respects CCS_HOME for test isolation)
+ * @returns Path to hooks directory
+ */
+export function getCcsHooksDir(): string {
+  return path.join(getCcsDir(), 'hooks');
 }
 
 /**
@@ -31,7 +109,7 @@ export function getCcsDir(): string {
  * @deprecated Use getActiveConfigPath() for mode-aware config path
  */
 export function getConfigPath(): string {
-  return process.env.CCS_CONFIG || path.join(getCcsHome(), '.ccs', 'config.json');
+  return process.env.CCS_CONFIG || path.join(getCcsDir(), 'config.json');
 }
 
 /**
@@ -120,12 +198,22 @@ export function loadConfigSafe(): Config {
     if (unifiedConfig.cliproxy?.variants) {
       cliproxy = {};
       for (const [name, variant] of Object.entries(unifiedConfig.cliproxy.variants)) {
-        cliproxy[name] = {
-          provider: variant.provider,
-          settings: variant.settings,
-          account: variant.account,
-          port: variant.port,
-        };
+        if ('type' in variant && variant.type === 'composite') {
+          // Composite variants: use default tier's provider
+          cliproxy[name] = {
+            provider: variant.tiers[variant.default_tier].provider,
+            settings: variant.settings,
+            port: variant.port,
+          };
+        } else {
+          const single = variant as CLIProxyVariantConfig;
+          cliproxy[name] = {
+            provider: single.provider,
+            settings: single.settings,
+            account: single.account,
+            port: single.port,
+          };
+        }
       }
     }
 
@@ -245,4 +333,38 @@ export function getSettingsPath(profile: string): string {
   }
 
   return expandedPath;
+}
+
+/**
+ * Get display name for a profile by reading ANTHROPIC_MODEL from settings
+ * @param profile - Profile name (glm, glmt, kimi, custom, etc.)
+ * @returns Formatted display name (e.g., 'GLM-4.7', 'Kimi', 'Custom-Model')
+ */
+export function getModelDisplayName(profile: string): string {
+  if (!profile) {
+    return '';
+  }
+
+  const settingsPath = path.join(getCcsDir(), `${profile}.settings.json`);
+
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const content = fs.readFileSync(settingsPath, 'utf8');
+      const settings = JSON.parse(content) as { env?: { ANTHROPIC_MODEL?: string } };
+      const model = settings.env?.ANTHROPIC_MODEL;
+
+      if (model) {
+        // Format: 'glm-5' -> 'GLM-5' (uppercase letters, preserve numbers)
+        return model
+          .split('-')
+          .map((part) => part.toUpperCase())
+          .join('-');
+      }
+    }
+  } catch {
+    // Fall through to default
+  }
+
+  // Fallback: profile name uppercase
+  return profile.toUpperCase();
 }

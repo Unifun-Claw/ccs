@@ -53,16 +53,21 @@ ccs config
 # Opens http://localhost:3000
 ```
 
+Dashboard updates hub: `http://localhost:3000/updates`
+
 Want to run the dashboard in Docker? See `docker/README.md`.
 
 ### 3. Configure Your Accounts
 
 The dashboard provides visual management for all account types:
 
-- **Claude Accounts**: Create isolated instances (work, personal, client)
-- **OAuth Providers**: One-click auth for Gemini, Codex, Antigravity
+- **Claude Accounts**: Isolation-first by default (work, personal, client), with explicit shared context opt-in
+- **OAuth Providers**: One-click auth for Gemini, Codex, Antigravity, Kiro, Copilot
 - **API Profiles**: Configure GLM, Kimi with your keys
+- **Factory Droid**: Track Droid install location and BYOK settings health
+- **Updates Center**: Track support rollouts (Droid target, CLIProxy provider changes, WebSearch integrations)
 - **Health Monitor**: Real-time status across all profiles
+- **Language Switcher**: Toggle dashboard locale between English, Simplified Chinese, and Vietnamese
 
 **Analytics Dashboard**
 
@@ -92,21 +97,30 @@ The dashboard provides visual management for all account types:
 | **Gemini** | OAuth | `ccs gemini` | Zero-config, fast iteration |
 | **Codex** | OAuth | `ccs codex` | Code generation |
 | **Copilot** | OAuth | `ccs copilot` or `ccs ghcp` | GitHub Copilot models |
-| **Kiro** | OAuth | `ccs kiro` | AWS CodeWhisperer (Claude-powered) |
+| **Cursor IDE** | Local Token | `ccs cursor` | Cursor subscription models via local daemon |
+| **Kiro** | OAuth (AWS default) | `ccs kiro` | AWS CodeWhisperer (Claude-powered) |
 | **Antigravity** | OAuth | `ccs agy` | Alternative routing |
 | **OpenRouter** | API Key | `ccs openrouter` | 300+ models, unified API |
 | **Ollama** | Local | `ccs ollama` | Local open-source models, privacy |
+| **llama.cpp** | Local | `ccs llamacpp` | Local GGUF inference via llama.cpp server |
 | **Ollama Cloud** | API Key | `ccs ollama-cloud` | Cloud-hosted open-source models |
 | **GLM** | API Key | `ccs glm` | Cost-optimized execution |
-| **Kimi** | API Key | `ccs kimi` | Long-context, thinking mode |
+| **KM (Kimi API)** | API Key | `ccs km` | Long-context, thinking mode |
+| **Kimi (OAuth)** | OAuth | `ccs kimi` | Device-code OAuth via CLIProxy |
 | **Azure Foundry** | API Key | `ccs foundry` | Claude via Microsoft Azure |
 | **Minimax** | API Key | `ccs mm` | M2 series, 1M context |
 | **DeepSeek** | API Key | `ccs deepseek` | V3.2 and R1 reasoning |
-| **Qwen** | API Key | `ccs qwen` | Alibaba Cloud, qwen3-coder |
+| **Qwen (OAuth)** | OAuth | `ccs qwen` | Qwen Code via CLIProxy |
+| **Qwen API** | API Key | `ccs api create --preset qwen` | DashScope Anthropic-compatible API |
+| **Alibaba Coding Plan** | API Key | `ccs api create --preset alibaba-coding-plan` | Model Studio Coding Plan endpoint |
 
 **OpenRouter Integration** (v7.0.0): CCS v7.0.0 adds OpenRouter with interactive model picker, dynamic discovery, and tier mapping (opus/sonnet/haiku). Create via `ccs api create --preset openrouter` or dashboard.
 
+**Alibaba Coding Plan Integration**: Configure via `ccs api create --preset alibaba-coding-plan` (or preset alias `alibaba`) with Coding Plan keys (`sk-sp-...`) and endpoint `https://coding-intl.dashscope.aliyuncs.com/apps/anthropic`.
+
 **Ollama Integration**: Run local open-source models (qwen3-coder, gpt-oss:20b) with full privacy. Use `ccs api create --preset ollama` - requires [Ollama v0.14.0+](https://ollama.com) installed. For cloud models, use `ccs api create --preset ollama-cloud`.
+
+**llama.cpp Integration**: Run a local llama.cpp OpenAI-compatible server and create a profile with `ccs api create --preset llamacpp`. CCS defaults to `http://127.0.0.1:8080`, matching the standard llama.cpp server port.
 
 **Azure Foundry**: Use `ccs api create --preset foundry` to set up Claude via Microsoft Azure AI Foundry. Requires Azure resource and API key from [ai.azure.com](https://ai.azure.com).
 
@@ -132,16 +146,123 @@ The dashboard provides visual management for all account types:
 ccs           # Default Claude session
 ccs gemini    # Gemini (OAuth)
 ccs codex     # OpenAI Codex (OAuth)
+ccs cursor    # Cursor IDE integration (token import + local daemon)
 ccs kiro      # Kiro/AWS CodeWhisperer (OAuth)
 ccs ghcp      # GitHub Copilot (OAuth device flow)
 ccs agy       # Antigravity (OAuth)
+ccs qwen      # Qwen Code (OAuth via CLIProxy)
 ccs ollama    # Local Ollama (no API key needed)
+ccs llamacpp  # Local llama.cpp (no API key needed)
 ccs glm       # GLM (API key)
+ccs km        # Kimi API profile (API key)
+ccs api create --preset alibaba-coding-plan  # Alibaba Coding Plan profile
+ccs api discover --register                  # Auto-register orphan *.settings.json
+ccs api copy glm glm-backup                  # Duplicate profile config + settings
+ccs api export glm --out ./glm.ccs-profile.json  # Export for cross-device transfer
+ccs api import ./glm.ccs-profile.json        # Import exported profile bundle
 ```
+
+### Droid Alias (`argv[0]` pattern)
+
+By default, invoking CCS as `ccsd` auto-selects the Droid target:
+
+```bash
+ln -s "$(command -v ccs)" /usr/local/bin/ccsd
+ccsd glm
+```
+
+Need additional alias names? Set `CCS_DROID_ALIASES` as a comma-separated list (for example: `CCS_DROID_ALIASES=ccs-droid,mydroid`).
+
+For Factory BYOK compatibility, CCS also stores a per-profile Droid provider hint
+(`CCS_DROID_PROVIDER`) using one of:
+`anthropic`, `openai`, or `generic-chat-completion-api`.
+If the hint is missing, CCS resolves provider from base URL/model at runtime.
+
+CCS also persists Droid's active model selector in `~/.factory/settings.json`
+(`model: custom:<alias>`). This avoids passing `-m` argv in interactive mode,
+which Droid treats as queued prompt text.
+
+CCS supports structural Droid command passthrough after profile selection:
+
+```bash
+ccsd codex exec --skip-permissions-unsafe "fix failing tests"
+ccsd codex --skip-permissions-unsafe "fix failing tests"   # auto-routed to: droid exec ...
+ccsd codex -m custom:gpt-5.3-codex "fix failing tests"     # short exec flags auto-routed too
+```
+
+If you pass exec-only flags without a prompt (for example `--skip-permissions-unsafe`),
+Droid `exec` will return its native "No prompt provided" usage guidance.
+
+If multiple reasoning flags are provided in Droid exec mode, CCS keeps the first
+flag and warns about duplicates.
+
+Dashboard parity: `ccs config` -> `Factory Droid`
+
+### Per-Profile Target Defaults
+
+You can pin a default target (`claude` or `droid`) per profile:
+
+```bash
+# API profile defaults to Droid
+ccs api create myglm --preset glm --target droid
+
+# CLIProxy variant defaults to Droid
+ccs cliproxy create mycodex --provider codex --target droid
+```
+
+Built-in CLIProxy providers also work with Droid alias/target override:
+
+```bash
+ccsd codex
+ccsd agy
+ccs codex --target droid
+ccsd codex exec --auto high "triage this bug report"
+```
+
+Dashboard parity:
+- `ccs config` -> `API Profiles` -> set **Default Target**
+- `ccs config` -> `CLIProxy` -> create/edit variant -> set **Default Target**
+
+### Kiro Auth Methods
+
+`ccs kiro --auth` defaults to AWS Builder ID Device OAuth (best support for AWS org accounts).
+
+```bash
+ccs kiro --auth --kiro-auth-method aws           # AWS Builder ID device code (default)
+ccs kiro --auth --kiro-auth-method aws-authcode  # AWS Builder ID auth code
+ccs kiro --auth --kiro-auth-method google        # Google OAuth
+ccs kiro --auth --kiro-auth-method github        # Dashboard management OAuth flow
+```
+
+Dashboard parity: `ccs config` -> Accounts -> Add Kiro account -> choose `Auth Method`.
+
+### Cursor IDE Quick Start
+
+```bash
+ccs cursor enable
+ccs cursor auth
+ccs cursor start
+ccs cursor status
+```
+
+If auto-detect is unavailable:
+
+```bash
+ccs cursor auth --manual --token <token> --machine-id <machine-id>
+```
+
+Defaults:
+- Port: `20129`
+- Ghost mode: enabled
+- Dashboard page: `ccs config` -> `Cursor IDE`
+
+Detailed guide: [`docs/cursor-integration.md`](./docs/cursor-integration.md)
 
 ### Parallel Workflows
 
 Run multiple terminals with different providers:
+
+> Delegation compatibility: when CCS spawns child Claude sessions, it strips the `CLAUDECODE` guard variable to avoid nested-session blocking in Claude Code v2.1.39+.
 
 ```bash
 # Terminal 1: Planning (Claude Pro)
@@ -169,6 +290,81 @@ ccs work "implement feature"    # Terminal 1
 ccs  "review code"              # Terminal 2 (personal account)
 ```
 
+#### Account Context Modes (Isolation-First)
+
+Account profiles are isolated by default.
+
+| Mode | Default | Requirements |
+|------|---------|--------------|
+| `isolated` | Yes | No `context_group` required |
+| `shared` | No (explicit opt-in) | Valid non-empty `context_group` |
+
+Shared mode continuity depth:
+
+- `standard` (default): shares project workspace context only
+- `deeper` (advanced opt-in): additionally syncs `session-env`, `file-history`, `shell-snapshots`, `todos`
+
+Opt in to shared context when needed:
+
+```bash
+# Share context with default group
+ccs auth create backup --share-context
+
+# Share context only within named group
+ccs auth create backup2 --context-group sprint-a
+
+# Advanced deeper continuity mode (requires shared mode)
+ccs auth create backup3 --context-group sprint-a --deeper-continuity
+```
+
+Update existing accounts without recreating login:
+
+1. Run `ccs config`
+2. Open `Accounts`
+3. Click the pencil icon in Actions and set `isolated` or `shared` mode + continuity depth
+
+Shared mode metadata in `~/.ccs/config.yaml`:
+
+```yaml
+accounts:
+  work:
+    created: "2026-02-24T00:00:00.000Z"
+    last_used: null
+    context_mode: "shared"
+    context_group: "team-alpha"
+    continuity_mode: "standard"
+```
+
+`context_group` rules:
+
+- lowercase letters, numbers, `_`, `-`
+- must start with a letter
+- max length `64`
+- non-empty after normalization
+- normalized by trim + lowercase + whitespace collapse (`" Team Alpha "` -> `"team-alpha"`)
+
+Shared context with `standard` depth links project workspace data. `deeper` depth links additional continuity artifacts. Credentials remain isolated per account.
+
+#### Cross-Profile Continuity Inheritance (Claude Target)
+
+You can map non-account profiles (API, CLIProxy, Copilot, or `default`) to reuse continuity artifacts from an account profile:
+
+```yaml
+continuity:
+  inherit_from_account:
+    glm: pro
+    gemini: pro
+    copilot: pro
+```
+
+With this config, `ccs glm`, `ccs gemini`, and `ccs copilot` run with `pro`'s `CLAUDE_CONFIG_DIR` continuity context while keeping each profile's own provider credentials/settings.
+
+Alternative path for lower manual switching:
+
+- Use CLIProxy Claude pool (`ccs cliproxy auth claude`) and manage pool behavior in `ccs config` -> `CLIProxy Plus`.
+
+Technical details: [`docs/session-sharing-technical-analysis.md`](docs/session-sharing-technical-analysis.md)
+
 <br>
 
 ## Maintenance
@@ -189,6 +385,16 @@ ccs update --force      # Force reinstall
 ccs update --beta       # Install dev channel
 ```
 
+### CI Parity Gate (for contributors)
+
+Before opening or updating a PR, run:
+
+```bash
+bun run validate:ci-parity
+```
+
+This mirrors CI behavior (build + validate + base-branch freshness check) and is also enforced by the local `pre-push` hook.
+
 ### Sync Shared Items
 
 ```bash
@@ -197,13 +403,23 @@ ccs sync
 
 Re-creates symlinks for shared commands, skills, and settings.
 
-### Antigravity Quota Management
+### Quota Management
 
 ```bash
 ccs cliproxy doctor     # Check quota status for all agy accounts
+ccs cliproxy quota      # Show agy/claude/codex/gemini/ghcp quotas (Claude/Codex: 5h + weekly reset schedule)
 ```
 
-**Auto-Failover**: When an Antigravity account runs out of quota, CCS automatically switches to another account with remaining capacity. Shared GCP project accounts are excluded (pooled quota).
+**Auto-Failover**: When a managed account runs out of quota, CCS automatically switches to another account with remaining capacity. Shared GCP project accounts are excluded (pooled quota).
+
+### CLIProxy Lifecycle
+
+```bash
+ccs cliproxy start      # Start CLIProxy background service
+ccs cliproxy status     # Check running status
+ccs cliproxy restart    # Restart CLIProxy service
+ccs cliproxy stop       # Stop running CLIProxy service
+```
 
 <br>
 
@@ -222,6 +438,8 @@ If Claude CLI is installed in a non-standard location:
 export CCS_CLAUDE_PATH="/path/to/claude"              # Unix
 $env:CCS_CLAUDE_PATH = "D:\Tools\Claude\claude.exe"   # Windows
 ```
+
+CCS sanitizes child Claude spawn environments by stripping `CLAUDECODE` (case-insensitive) to prevent nested-session guard failures during delegation. `CCS_CLAUDE_PATH` is still respected after this sanitization step.
 
 </details>
 
@@ -325,6 +543,8 @@ See [Remote Proxy documentation](https://docs.ccs.kaitran.ca/features/remote-pro
 | Multi-Account Claude | [docs.ccs.kaitran.ca/providers/claude-accounts](https://docs.ccs.kaitran.ca/providers/claude-accounts) |
 | API Profiles | [docs.ccs.kaitran.ca/providers/api-profiles](https://docs.ccs.kaitran.ca/providers/api-profiles) |
 | Remote Proxy | [docs.ccs.kaitran.ca/features/remote-proxy](https://docs.ccs.kaitran.ca/features/remote-proxy) |
+| Cursor IDE (local guide) | [./docs/cursor-integration.md](./docs/cursor-integration.md) |
+| Dashboard i18n (local guide) | [./docs/i18n-dashboard.md](./docs/i18n-dashboard.md) |
 | CLI Reference | [docs.ccs.kaitran.ca/reference/cli-commands](https://docs.ccs.kaitran.ca/reference/cli-commands) |
 | Architecture | [docs.ccs.kaitran.ca/reference/architecture](https://docs.ccs.kaitran.ca/reference/architecture) |
 | Troubleshooting | [docs.ccs.kaitran.ca/reference/troubleshooting](https://docs.ccs.kaitran.ca/reference/troubleshooting) |

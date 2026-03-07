@@ -7,15 +7,25 @@
 
 import * as fs from 'fs';
 import * as os from 'os';
-import * as path from 'path';
 import { InteractivePrompt } from '../utils/prompt';
 import { getProviderCatalog, supportsModelConfig, ModelEntry } from './model-catalog';
 import { getProviderSettingsPath, getClaudeEnvVars } from './config-generator';
 import { CLIProxyProvider } from './types';
 import { initUI, color, bold, dim, ok, info, header } from '../utils/ui';
+import { getCcsDir } from '../utils/config-manager';
+import { normalizeModelIdForProvider } from './model-id-normalizer';
 
-/** CCS directory */
-const CCS_DIR = path.join(os.homedir(), '.ccs');
+const CODEX_EFFORT_SUFFIX_REGEX = /-(xhigh|high|medium)$/i;
+
+function stripCodexEffortSuffix(model: string, provider: CLIProxyProvider): string {
+  if (provider !== 'codex') return model;
+  return model.replace(CODEX_EFFORT_SUFFIX_REGEX, '');
+}
+
+function canonicalizeModelForProvider(provider: CLIProxyProvider, model: string): string {
+  const withoutCodexSuffix = stripCodexEffortSuffix(model, provider);
+  return normalizeModelIdForProvider(withoutCodexSuffix, provider);
+}
 
 /**
  * Check if provider has user settings configured
@@ -41,7 +51,8 @@ export function getCurrentModel(
 
   try {
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    return settings.env?.ANTHROPIC_MODEL;
+    const model = settings.env?.ANTHROPIC_MODEL;
+    return typeof model === 'string' ? canonicalizeModelForProvider(provider, model) : model;
   } catch {
     return undefined;
   }
@@ -107,8 +118,9 @@ export async function configureProviderModel(
     ? customSettingsPath.replace(/^~/, os.homedir())
     : getProviderSettingsPath(provider);
 
-  // Skip if already configured (unless --config flag)
-  if (!force && fs.existsSync(settingsPath)) {
+  // Skip if already configured with a model (unless --config flag).
+  // A settings file can exist without model env keys (e.g., hook-only writes).
+  if (!force && getCurrentModel(provider, customSettingsPath)?.trim()) {
     return false;
   }
 
@@ -123,7 +135,9 @@ export async function configureProviderModel(
 
   // Find default index - use current model if configured, otherwise catalog default
   const currentModel = getCurrentModel(provider, customSettingsPath);
-  const targetModel = currentModel || catalog.defaultModel;
+  const targetModel = currentModel
+    ? canonicalizeModelForProvider(provider, currentModel)
+    : catalog.defaultModel;
   const defaultIdx = catalog.models.findIndex((m) => m.id === targetModel);
   const safeDefaultIdx = defaultIdx >= 0 ? defaultIdx : 0;
 
@@ -145,6 +159,13 @@ export async function configureProviderModel(
 
   // Get base env vars for defaults
   const baseEnv = getClaudeEnvVars(provider);
+  const selectedDefaultModel = canonicalizeModelForProvider(provider, selectedModel);
+  const selectedOpusModel = canonicalizeModelForProvider(provider, selectedModel);
+  const selectedSonnetModel = canonicalizeModelForProvider(provider, selectedModel);
+  const selectedHaikuModel = canonicalizeModelForProvider(
+    provider,
+    baseEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL || selectedModel
+  );
 
   // Read existing settings to preserve user customizations
   let existingSettings: Record<string, unknown> = {};
@@ -166,10 +187,10 @@ export async function configureProviderModel(
   const ccsControlledEnv: Record<string, string> = {
     ANTHROPIC_BASE_URL: baseEnv.ANTHROPIC_BASE_URL || '',
     ANTHROPIC_AUTH_TOKEN: baseEnv.ANTHROPIC_AUTH_TOKEN || '',
-    ANTHROPIC_MODEL: selectedModel,
-    ANTHROPIC_DEFAULT_OPUS_MODEL: selectedModel,
-    ANTHROPIC_DEFAULT_SONNET_MODEL: selectedModel,
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: baseEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL || '',
+    ANTHROPIC_MODEL: selectedDefaultModel,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: selectedOpusModel,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: selectedSonnetModel,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedHaikuModel,
   };
 
   // Merge: user env vars (preserved) + CCS controlled (override)
@@ -185,8 +206,9 @@ export async function configureProviderModel(
   };
 
   // Ensure CCS directory exists
-  if (!fs.existsSync(CCS_DIR)) {
-    fs.mkdirSync(CCS_DIR, { recursive: true });
+  const ccsDir = getCcsDir();
+  if (!fs.existsSync(ccsDir)) {
+    fs.mkdirSync(ccsDir, { recursive: true });
   }
 
   // Write settings file
@@ -230,13 +252,16 @@ export async function showCurrentConfig(provider: CLIProxyProvider): Promise<voi
 
   const currentModel = getCurrentModel(provider);
   const settingsPath = getProviderSettingsPath(provider);
+  const normalizedCurrentModel = currentModel
+    ? canonicalizeModelForProvider(provider, currentModel)
+    : undefined;
 
   console.error('');
   console.error(header(`${catalog.displayName} Model Configuration`));
   console.error('');
 
   if (currentModel) {
-    const entry = catalog.models.find((m) => m.id === currentModel);
+    const entry = catalog.models.find((m) => m.id === normalizedCurrentModel);
     const displayName = entry?.name || 'Unknown';
     console.error(
       `  ${bold('Current:')} ${color(displayName, 'success')} ${dim(`(${currentModel})`)}`
@@ -253,7 +278,7 @@ export async function showCurrentConfig(provider: CLIProxyProvider): Promise<voi
   console.error(dim('  [DEPRECATED] = Not recommended for use'));
   console.error('');
   catalog.models.forEach((m) => {
-    const isCurrent = m.id === currentModel;
+    const isCurrent = m.id === normalizedCurrentModel;
     console.error(formatModelDetailed(m, isCurrent));
   });
 

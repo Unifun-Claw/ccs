@@ -9,6 +9,10 @@
  * Into a single config.yaml structure.
  */
 
+import type { TargetType } from '../targets/target-adapter';
+import type { CLIProxyProvider } from '../cliproxy/types';
+import { CLIPROXY_PROVIDER_IDS } from '../cliproxy/provider-capabilities';
+
 /**
  * Unified config version.
  * Version 2 = YAML unified format
@@ -22,6 +26,12 @@
 export const UNIFIED_CONFIG_VERSION = 8;
 
 /**
+ * Supported CLIProxy providers.
+ * Derived from CLIPROXY_PROVIDER_IDS — single source of truth in provider-capabilities.ts.
+ */
+export const CLIPROXY_SUPPORTED_PROVIDERS = CLIPROXY_PROVIDER_IDS;
+
+/**
  * Account configuration (formerly in profiles.json).
  * Represents an isolated Claude instance via CLAUDE_CONFIG_DIR.
  */
@@ -30,6 +40,14 @@ export interface AccountConfig {
   created: string;
   /** ISO timestamp of last usage, null if never used */
   last_used: string | null;
+  /** Context mode for project workspace data */
+  context_mode?: 'isolated' | 'shared';
+  /** Context-sharing group when context_mode='shared' */
+  context_group?: string;
+  /** Shared continuity depth when context_mode='shared' */
+  continuity_mode?: 'standard' | 'deeper';
+  /** Bare profile: no shared symlinks (commands, skills, agents, settings.json) */
+  bare?: boolean;
 }
 
 /**
@@ -44,6 +62,8 @@ export interface ProfileConfig {
   type: 'api';
   /** Path to settings file (e.g., "~/.ccs/glm.settings.json") */
   settings: string;
+  /** Target CLI to use for this profile (default: 'claude') */
+  target?: TargetType;
 }
 
 /**
@@ -61,7 +81,7 @@ export type OAuthAccounts = Record<string, string>;
  */
 export interface CLIProxyVariantConfig {
   /** Base provider to use */
-  provider: 'gemini' | 'codex' | 'agy' | 'qwen' | 'iflow' | 'kiro' | 'ghcp' | 'claude';
+  provider: CLIProxyProvider;
   /** Account nickname (references oauth_accounts) */
   account?: string;
   /** Path to settings file (e.g., "~/.ccs/gemini-custom.settings.json") */
@@ -70,6 +90,55 @@ export interface CLIProxyVariantConfig {
   port?: number;
   /** Per-variant auth override (optional) */
   auth?: CLIProxyAuthConfig;
+  /** Target CLI to use for this variant (default: 'claude') */
+  target?: TargetType;
+}
+
+/**
+ * Per-tier provider+model mapping for composite variants.
+ */
+export interface CompositeTierConfig {
+  /** Provider for this tier */
+  provider: CLIProxyProvider;
+  /** Model ID to use for this tier */
+  model: string;
+  /** Account nickname (optional, references oauth_accounts) */
+  account?: string;
+  /** Fallback provider+model if primary fails */
+  fallback?: {
+    provider: CLIProxyProvider;
+    model: string;
+    account?: string;
+  };
+  /** Per-tier thinking budget override (e.g. 'xhigh', 'medium', 'off') */
+  thinking?: string;
+}
+
+/**
+ * Composite variant configuration.
+ * Mixes different providers per Claude tier (opus, sonnet, haiku) in a single profile.
+ * Uses CLIProxyAPI root endpoints (/v1/messages) for model-based routing
+ * instead of provider-specific endpoints (/api/provider/{provider}).
+ */
+export interface CompositeVariantConfig {
+  /** Discriminator for composite type */
+  type: 'composite';
+  /** Which tier ANTHROPIC_MODEL equals (default must be one of the three) */
+  default_tier: 'opus' | 'sonnet' | 'haiku';
+  /** Per-tier provider+model mapping */
+  tiers: {
+    opus: CompositeTierConfig;
+    sonnet: CompositeTierConfig;
+    haiku: CompositeTierConfig;
+  };
+  /** Path to settings file */
+  settings?: string;
+  /** Shared port for the composite profile */
+  port?: number;
+  /** Per-variant auth override (optional) */
+  auth?: CLIProxyAuthConfig;
+  /** Target CLI to use for this composite variant (default: 'claude') */
+  target?: TargetType;
 }
 
 /**
@@ -94,6 +163,22 @@ export interface CLIProxyLoggingConfig {
   /** Enable request logging for debugging (default: false) */
   request_log?: boolean;
 }
+
+/**
+ * CLIProxy safety configuration.
+ * Controls high-risk flow safeguards for supported providers.
+ */
+export interface CLIProxySafetyConfig {
+  /** Allow skipping AGY responsibility acknowledgement flow (default: false) */
+  antigravity_ack_bypass?: boolean;
+}
+
+/**
+ * Default CLIProxy safety configuration.
+ */
+export const DEFAULT_CLIPROXY_SAFETY_CONFIG: CLIProxySafetyConfig = {
+  antigravity_ack_bypass: false,
+};
 
 /**
  * Token refresh configuration.
@@ -122,10 +207,12 @@ export interface CLIProxyConfig {
   oauth_accounts: OAuthAccounts;
   /** Built-in providers (read-only, for reference) */
   providers: readonly string[];
-  /** User-defined provider variants */
-  variants: Record<string, CLIProxyVariantConfig>;
+  /** User-defined provider variants (single-provider or composite) */
+  variants: Record<string, CLIProxyVariantConfig | CompositeVariantConfig>;
   /** Logging configuration (disabled by default) */
   logging?: CLIProxyLoggingConfig;
+  /** Safety controls for high-risk provider flows */
+  safety?: CLIProxySafetyConfig;
   /** Kiro: disable incognito browser mode (use normal browser to save credentials) */
   kiro_no_incognito?: boolean;
   /** Global auth configuration for CLIProxyAPI */
@@ -232,6 +319,29 @@ export interface CopilotConfig {
 }
 
 /**
+ * Cursor IDE integration configuration.
+ * Enables Cursor IDE usage via cursor proxy daemon.
+ */
+export interface CursorConfig {
+  /** Enable Cursor integration (default: false) */
+  enabled: boolean;
+  /** Port for cursor proxy daemon (default: 20129) */
+  port: number;
+  /** Auto-start daemon when CCS starts (default: false) */
+  auto_start: boolean;
+  /** Enable ghost mode to disable telemetry (default: true) */
+  ghost_mode: boolean;
+  /** Default model ID used by Cursor integration */
+  model: string;
+  /** Optional tier mapping for Claude-compatible model routing */
+  opus_model?: string;
+  /** Optional tier mapping for Claude-compatible model routing */
+  sonnet_model?: string;
+  /** Optional tier mapping for Claude-compatible model routing */
+  haiku_model?: string;
+}
+
+/**
  * Remote proxy configuration.
  * Connect to a remote CLIProxyAPI instance instead of spawning local binary.
  */
@@ -244,7 +354,7 @@ export interface ProxyRemoteConfig {
    * Remote proxy port.
    * Optional - defaults based on protocol:
    * - HTTPS: 443
-   * - HTTP: 80
+   * - HTTP: 8317
    * When empty/undefined, uses protocol default.
    */
   port?: number;
@@ -311,6 +421,15 @@ export interface GlobalEnvConfig {
 }
 
 /**
+ * Cross-profile continuity inheritance configuration.
+ * Maps execution profile names to source account profiles for CLAUDE_CONFIG_DIR reuse.
+ */
+export interface ContinuityConfig {
+  /** Profile name -> source account profile name */
+  inherit_from_account?: Record<string, string>;
+}
+
+/**
  * Default global env vars for third-party profiles.
  * These disable Claude Code telemetry/reporting since we're using proxy.
  */
@@ -370,6 +489,25 @@ export interface AutoQuotaConfig {
 }
 
 /**
+ * Runtime quota monitor configuration.
+ * Controls adaptive polling during active sessions.
+ */
+export interface RuntimeMonitorConfig {
+  /** Enable runtime monitoring during sessions (default: true) */
+  enabled: boolean;
+  /** Poll interval in seconds when quota > warn_threshold (default: 300) */
+  normal_interval_seconds: number;
+  /** Poll interval in seconds when quota <= warn_threshold (default: 60) */
+  critical_interval_seconds: number;
+  /** Quota percentage that triggers fast polling + warning (default: 20) */
+  warn_threshold: number;
+  /** Quota percentage that triggers cooldown + switch (default: 5) */
+  exhaustion_threshold: number;
+  /** Minutes to cooldown exhausted account (default: 5) */
+  cooldown_minutes: number;
+}
+
+/**
  * Manual quota management configuration.
  * User-controlled overrides for account selection.
  */
@@ -401,6 +539,8 @@ export interface QuotaManagementConfig {
   auto: AutoQuotaConfig;
   /** Manual mode settings */
   manual: ManualQuotaConfig;
+  /** Runtime monitor settings */
+  runtime_monitor: RuntimeMonitorConfig;
 }
 
 /**
@@ -423,12 +563,25 @@ export const DEFAULT_MANUAL_QUOTA_CONFIG: ManualQuotaConfig = {
 };
 
 /**
+ * Default runtime monitor configuration.
+ */
+export const DEFAULT_RUNTIME_MONITOR_CONFIG: RuntimeMonitorConfig = {
+  enabled: true,
+  normal_interval_seconds: 300,
+  critical_interval_seconds: 60,
+  warn_threshold: 20,
+  exhaustion_threshold: 5,
+  cooldown_minutes: 5,
+};
+
+/**
  * Default quota management configuration.
  */
 export const DEFAULT_QUOTA_MANAGEMENT_CONFIG: QuotaManagementConfig = {
   mode: 'hybrid',
   auto: { ...DEFAULT_AUTO_QUOTA_CONFIG },
   manual: { ...DEFAULT_MANUAL_QUOTA_CONFIG },
+  runtime_monitor: { ...DEFAULT_RUNTIME_MONITOR_CONFIG },
 };
 
 // ============================================================================
@@ -519,6 +672,40 @@ export const DEFAULT_DASHBOARD_AUTH_CONFIG: DashboardAuthConfig = {
 };
 
 /**
+ * Image analysis configuration.
+ * Routes image/PDF files through CLIProxy for vision analysis.
+ */
+export interface ImageAnalysisConfig {
+  /** Enable image analysis via CLIProxy (default: true) */
+  enabled: boolean;
+  /** Timeout in seconds (default: 60) */
+  timeout: number;
+  /** Provider-to-model mapping for vision analysis */
+  provider_models: Record<string, string>;
+}
+
+/**
+ * Default image analysis configuration.
+ * Enabled by default for CLIProxy providers with vision support.
+ */
+export const DEFAULT_IMAGE_ANALYSIS_CONFIG: ImageAnalysisConfig = {
+  enabled: true,
+  timeout: 60,
+  provider_models: {
+    agy: 'gemini-2.5-flash',
+    gemini: 'gemini-2.5-flash',
+    codex: 'gpt-5.1-codex-mini',
+    kiro: 'kiro-claude-haiku-4-5',
+    ghcp: 'claude-haiku-4.5',
+    claude: 'claude-haiku-4-5-20251001',
+    // 'vision-model' is a generic placeholder - users can override via config.yaml
+    qwen: 'vision-model',
+    iflow: 'qwen3-vl-plus',
+    kimi: 'vision-model',
+  },
+};
+
+/**
  * Main unified configuration structure.
  * Stored in ~/.ccs/config.yaml
  */
@@ -541,8 +728,12 @@ export interface UnifiedConfig {
   websearch?: WebSearchConfig;
   /** Global environment variables for all non-Claude subscription profiles */
   global_env?: GlobalEnvConfig;
+  /** Cross-profile continuity inheritance mapping */
+  continuity?: ContinuityConfig;
   /** Copilot API configuration (GitHub Copilot proxy) */
   copilot?: CopilotConfig;
+  /** Cursor IDE configuration (Cursor proxy daemon) */
+  cursor?: CursorConfig;
   /** CLIProxy server configuration for remote/local mode */
   cliproxy_server?: CliproxyServerConfig;
   /** Quota management configuration (v7+) */
@@ -551,6 +742,8 @@ export interface UnifiedConfig {
   thinking?: ThinkingConfig;
   /** Dashboard authentication configuration (optional) */
   dashboard_auth?: DashboardAuthConfig;
+  /** Image analysis configuration (vision via CLIProxy) */
+  image_analysis?: ImageAnalysisConfig;
 }
 
 /**
@@ -566,6 +759,18 @@ export const DEFAULT_COPILOT_CONFIG: CopilotConfig = {
   rate_limit: null,
   wait_on_limit: true,
   model: 'gpt-4.1', // Free tier compatible
+};
+
+/**
+ * Default Cursor configuration.
+ * Disabled by default, ghost mode enabled for privacy.
+ */
+export const DEFAULT_CURSOR_CONFIG: CursorConfig = {
+  enabled: false,
+  port: 20129,
+  auto_start: false,
+  ghost_mode: true,
+  model: 'gpt-5.3-codex',
 };
 
 /**
@@ -603,12 +808,13 @@ export function createEmptyUnifiedConfig(): UnifiedConfig {
     cliproxy: {
       backend: 'plus',
       oauth_accounts: {},
-      providers: ['gemini', 'codex', 'agy', 'qwen', 'iflow', 'kiro', 'ghcp'],
+      providers: [...CLIPROXY_SUPPORTED_PROVIDERS],
       variants: {},
       logging: {
         enabled: false,
         request_log: false,
       },
+      safety: { ...DEFAULT_CLIPROXY_SAFETY_CONFIG },
       auto_sync: true,
     },
     preferences: {
@@ -640,10 +846,12 @@ export function createEmptyUnifiedConfig(): UnifiedConfig {
       env: { ...DEFAULT_GLOBAL_ENV },
     },
     copilot: { ...DEFAULT_COPILOT_CONFIG },
+    cursor: { ...DEFAULT_CURSOR_CONFIG },
     cliproxy_server: { ...DEFAULT_CLIPROXY_SERVER_CONFIG },
     quota_management: { ...DEFAULT_QUOTA_MANAGEMENT_CONFIG },
     thinking: { ...DEFAULT_THINKING_CONFIG },
     dashboard_auth: { ...DEFAULT_DASHBOARD_AUTH_CONFIG },
+    image_analysis: { ...DEFAULT_IMAGE_ANALYSIS_CONFIG },
   };
 }
 

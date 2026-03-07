@@ -1,12 +1,8 @@
-/**
- * API Profiles Page - Master-Detail Layout
- * Comprehensive profile management with inline editing
- */
-
-import { useState, useMemo } from 'react';
+import { type ChangeEvent, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 import {
   Plus,
   Search,
@@ -16,73 +12,64 @@ import {
   Server,
   FileJson,
   RefreshCw,
+  Copy,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { ProfileEditor } from '@/components/profile-editor';
 import { ProfileCreateDialog } from '@/components/profiles/profile-create-dialog';
 import { OpenRouterBanner } from '@/components/profiles/openrouter-banner';
 import { OpenRouterQuickStart } from '@/components/profiles/openrouter-quick-start';
 import { OpenRouterPromoCard } from '@/components/profiles/openrouter-promo-card';
-import { useProfiles, useDeleteProfile } from '@/hooks/use-profiles';
+import { AlibabaCodingPlanPromoCard } from '@/components/profiles/alibaba-coding-plan-promo-card';
+import {
+  useProfiles,
+  useDeleteProfile,
+  useDiscoverProfileOrphans,
+  useRegisterProfileOrphans,
+  useCopyProfile,
+  useExportProfile,
+  useImportProfile,
+} from '@/hooks/use-profiles';
 import { useOpenRouterModels } from '@/hooks/use-openrouter-models';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
-import type { Profile } from '@/lib/api-client';
+import type { ApiProfileExportBundle, Profile } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { CopyButton } from '@/components/ui/copy-button';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 export function ApiPage() {
+  const { t } = useTranslation();
   const { data, isLoading, isError, refetch } = useProfiles();
   const deleteMutation = useDeleteProfile();
+  const discoverOrphansMutation = useDiscoverProfileOrphans();
+  const registerOrphansMutation = useRegisterProfileOrphans();
+  const copyProfileMutation = useCopyProfile();
+  const exportProfileMutation = useExportProfile();
+  const importProfileMutation = useImportProfile();
   const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDialogOpen, setCreateDialogOpen] = useState(false);
-  const [createMode, setCreateMode] = useState<'normal' | 'openrouter'>('normal');
+  const [createMode, setCreateMode] = useState<'normal' | 'openrouter' | 'alibaba-coding-plan'>(
+    'normal'
+  );
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editorHasChanges, setEditorHasChanges] = useState(false);
   const [pendingSwitch, setPendingSwitch] = useState<string | null>(null);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Prefetch OpenRouter models when page loads (lazy - won't block render)
   useOpenRouterModels();
-
-  // Memoize profiles to maintain stable reference
   const profiles = useMemo(() => data?.profiles || [], [data?.profiles]);
-
-  // Filter profiles by search
   const filteredProfiles = useMemo(
     () => profiles.filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase())),
     [profiles, searchQuery]
   );
-
-  // selectedProfile is null by default - user must click to select
-  // This allows OpenRouterQuickStart to show as the default right panel
   const selectedProfileData = selectedProfile
     ? profiles.find((p) => p.name === selectedProfile)
     : null;
 
-  // Handle profile deletion
-  const handleDelete = (name: string) => {
-    deleteMutation.mutate(name, {
-      onSuccess: () => {
-        if (selectedProfile === name) {
-          setSelectedProfile(null);
-        }
-        setDeleteConfirm(null);
-      },
-    });
-  };
-
-  // Handle create success
-  const handleCreateSuccess = (name: string) => {
-    setCreateDialogOpen(false);
-    // Use the same unsaved changes check as profile selection
-    if (editorHasChanges && selectedProfile !== null) {
-      setPendingSwitch(name);
-    } else {
-      setSelectedProfile(name);
-    }
-  };
-
-  // Handle profile selection with unsaved changes check
-  const handleProfileSelect = (name: string) => {
+  const switchToProfile = (name: string) => {
     if (editorHasChanges && selectedProfile !== name) {
       setPendingSwitch(name);
     } else {
@@ -90,38 +77,182 @@ export function ApiPage() {
     }
   };
 
+  const handleDelete = (name: string) => {
+    deleteMutation.mutate(name, {
+      onSuccess: () => {
+        if (selectedProfile === name) {
+          setSelectedProfile(null);
+          setEditorHasChanges(false);
+          setPendingSwitch(null);
+        }
+        setDeleteConfirm(null);
+      },
+    });
+  };
+
+  const handleCreateSuccess = (name: string) => {
+    setCreateDialogOpen(false);
+    switchToProfile(name);
+  };
+  const handleProfileSelect = (name: string) => {
+    switchToProfile(name);
+  };
+
+  const triggerDownload = (filename: string, bundle: ApiProfileExportBundle) => {
+    const content = JSON.stringify(bundle, null, 2) + '\n';
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDiscoverOrphans = async () => {
+    try {
+      const result = await discoverOrphansMutation.mutateAsync();
+      if (result.orphans.length === 0) {
+        toast.success('No orphan profile settings found');
+        return;
+      }
+
+      const validCount = result.orphans.filter((orphan) => orphan.validation.valid).length;
+      const shouldRegister = window.confirm(
+        `Found ${result.orphans.length} orphan settings file(s). Register ${validCount} valid profile(s) now?`
+      );
+
+      if (!shouldRegister) return;
+
+      const registration = await registerOrphansMutation.mutateAsync({});
+      const skippedMessage =
+        registration.skipped.length > 0 ? `, skipped ${registration.skipped.length}` : '';
+      toast.success(`Registered ${registration.registered.length} profile(s)${skippedMessage}`);
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
+
+  const handleCopySelectedProfile = async () => {
+    if (!selectedProfileData) return;
+    const destinationInput = window.prompt(
+      `Copy profile "${selectedProfileData.name}" to new profile name:`,
+      `${selectedProfileData.name}-copy`
+    );
+    if (!destinationInput) return;
+    const destination = destinationInput.trim();
+    if (!destination) {
+      toast.error('Destination profile name cannot be empty');
+      return;
+    }
+
+    try {
+      const result = await copyProfileMutation.mutateAsync({
+        name: selectedProfileData.name,
+        data: { destination },
+      });
+      switchToProfile(destination);
+      if (result.warnings && result.warnings.length > 0) {
+        toast.info(result.warnings.join('\n'));
+      }
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
+
+  const handleExportSelectedProfile = async () => {
+    if (!selectedProfileData) return;
+    try {
+      const result = await exportProfileMutation.mutateAsync({ name: selectedProfileData.name });
+      triggerDownload(`${selectedProfileData.name}.ccs-profile.json`, result.bundle);
+      if (result.redacted) {
+        toast.info(
+          'Export created with redacted token. Use include-secrets flow in CLI if needed.'
+        );
+      } else {
+        toast.success('Profile export downloaded');
+      }
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
+
+  const handleImportClick = () => {
+    importFileInputRef.current?.click();
+  };
+
+  const handleImportFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const rawText = await file.text();
+      const bundle = JSON.parse(rawText) as ApiProfileExportBundle;
+      const result = await importProfileMutation.mutateAsync({ bundle });
+      if (result.name) {
+        switchToProfile(result.name);
+      }
+      if (result.warnings && result.warnings.length > 0) {
+        toast.info(result.warnings.join('\n'));
+      }
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to import profile bundle');
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-100px)] flex flex-col">
-      {/* OpenRouter Announcement Banner */}
       <OpenRouterBanner onCreateClick={() => setCreateDialogOpen(true)} />
-
-      {/* Main Content */}
       <div className="flex-1 flex min-h-0">
-        {/* Left Panel - Profiles List */}
         <div className="w-80 border-r flex flex-col bg-muted/30">
-          {/* Header */}
           <div className="p-4 border-b bg-background">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Server className="w-5 h-5 text-primary" />
-                <h1 className="font-semibold">API Profiles</h1>
+                <h1 className="font-semibold">{t('apiProfiles.title')}</h1>
               </div>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setCreateDialogOpen(true);
-                }}
-              >
-                <Plus className="w-4 h-4 mr-1" />
-                New
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleDiscoverOrphans()}
+                  disabled={discoverOrphansMutation.isPending || registerOrphansMutation.isPending}
+                  aria-label="Discover orphan profiles"
+                  title="Discover orphan profiles"
+                >
+                  <RefreshCw
+                    className={`w-4 h-4 ${discoverOrphansMutation.isPending ? 'animate-spin' : ''}`}
+                  />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleImportClick}
+                  disabled={importProfileMutation.isPending}
+                  aria-label="Import profile bundle"
+                  title="Import profile bundle"
+                >
+                  <Upload className="w-4 h-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setCreateDialogOpen(true);
+                  }}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  {t('apiProfiles.new')}
+                </Button>
+              </div>
             </div>
 
-            {/* Search */}
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search profiles..."
+                placeholder={t('apiProfiles.searchPlaceholder')}
                 className="pl-8 h-9"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -129,23 +260,24 @@ export function ApiPage() {
             </div>
           </div>
 
-          {/* Profile List */}
           <ScrollArea className="flex-1">
             {isLoading ? (
-              <div className="p-4 text-sm text-muted-foreground">Loading profiles...</div>
+              <div className="p-4 text-sm text-muted-foreground">
+                {t('apiProfiles.loadingProfiles')}
+              </div>
             ) : isError ? (
               <div className="p-4 text-center">
                 <div className="space-y-3 py-8">
                   <AlertCircle className="w-12 h-12 mx-auto text-destructive/50" />
                   <div>
-                    <p className="text-sm font-medium">Failed to load profiles</p>
+                    <p className="text-sm font-medium">{t('apiProfiles.failedLoadTitle')}</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Unable to fetch API profiles. Please try again.
+                      {t('apiProfiles.failedLoadDesc')}
                     </p>
                   </div>
                   <Button size="sm" variant="outline" onClick={() => refetch()}>
                     <RefreshCw className="w-4 h-4 mr-1" />
-                    Retry
+                    {t('apiProfiles.retry')}
                   </Button>
                 </div>
               </div>
@@ -155,9 +287,9 @@ export function ApiPage() {
                   <div className="space-y-3 py-8">
                     <FileJson className="w-12 h-12 mx-auto text-muted-foreground/50" />
                     <div>
-                      <p className="text-sm font-medium">No API profiles yet</p>
+                      <p className="text-sm font-medium">{t('apiProfiles.noProfilesYet')}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Create your first profile to connect to custom API endpoints
+                        {t('apiProfiles.noProfilesDesc')}
                       </p>
                     </div>
                     <Button
@@ -168,12 +300,12 @@ export function ApiPage() {
                       }}
                     >
                       <Plus className="w-4 h-4 mr-1" />
-                      Create Profile
+                      {t('apiProfiles.createProfile')}
                     </Button>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground py-4">
-                    No profiles match "{searchQuery}"
+                    {t('apiProfiles.noProfileMatch', { query: searchQuery })}
                   </p>
                 )}
               </div>
@@ -192,43 +324,73 @@ export function ApiPage() {
             )}
           </ScrollArea>
 
-          {/* Footer Stats */}
           {profiles.length > 0 && (
             <div className="p-3 border-t bg-background text-xs text-muted-foreground">
               <div className="flex items-center justify-between">
-                <span>
-                  {profiles.length} profile{profiles.length !== 1 ? 's' : ''}
-                </span>
+                <span>{t('apiProfiles.profileCount', { count: profiles.length })}</span>
                 <span className="flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3 text-green-600" />
-                  {profiles.filter((p) => p.configured).length} configured
+                  {t('apiProfiles.configuredCount', {
+                    count: profiles.filter((p) => p.configured).length,
+                  })}
                 </span>
               </div>
             </div>
           )}
 
-          {/* OpenRouter Promo - always visible */}
           <OpenRouterPromoCard
             onCreateClick={() => {
               setCreateMode('openrouter');
               setCreateDialogOpen(true);
             }}
           />
+          <AlibabaCodingPlanPromoCard
+            onCreateClick={() => {
+              setCreateMode('alibaba-coding-plan');
+              setCreateDialogOpen(true);
+            }}
+          />
         </div>
 
-        {/* Right Panel - Editor or QuickStart */}
         <div className="flex-1 flex flex-col min-w-0">
           {selectedProfileData ? (
-            <ProfileEditor
-              key={selectedProfileData.name}
-              profileName={selectedProfileData.name}
-              onDelete={() => setDeleteConfirm(selectedProfileData.name)}
-              onHasChangesUpdate={setEditorHasChanges}
-            />
+            <>
+              <div className="px-4 py-2 border-b bg-background flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleCopySelectedProfile()}
+                  disabled={copyProfileMutation.isPending}
+                >
+                  <Copy className="w-4 h-4 mr-1" />
+                  Copy
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleExportSelectedProfile()}
+                  disabled={exportProfileMutation.isPending}
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  Export
+                </Button>
+              </div>
+              <ProfileEditor
+                key={selectedProfileData.name}
+                profileName={selectedProfileData.name}
+                profileTarget={selectedProfileData.target}
+                onDelete={() => setDeleteConfirm(selectedProfileData.name)}
+                onHasChangesUpdate={setEditorHasChanges}
+              />
+            </>
           ) : (
             <OpenRouterQuickStart
               onOpenRouterClick={() => {
                 setCreateMode('openrouter');
+                setCreateDialogOpen(true);
+              }}
+              onAlibabaCodingPlanClick={() => {
+                setCreateMode('alibaba-coding-plan');
                 setCreateDialogOpen(true);
               }}
               onCustomClick={() => {
@@ -240,7 +402,14 @@ export function ApiPage() {
         </div>
       </div>
 
-      {/* Create Dialog */}
+      <input
+        ref={importFileInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(event) => void handleImportFileChange(event)}
+      />
+
       <ProfileCreateDialog
         open={isCreateDialogOpen}
         onOpenChange={setCreateDialogOpen}
@@ -248,23 +417,24 @@ export function ApiPage() {
         initialMode={createMode}
       />
 
-      {/* Delete Confirmation */}
       <ConfirmDialog
         open={!!deleteConfirm}
-        title="Delete Profile"
-        description={`Are you sure you want to delete "${deleteConfirm}"? This will remove the settings file and cannot be undone.`}
-        confirmText="Delete"
+        title={t('apiProfiles.deleteProfileTitle')}
+        description={t('apiProfiles.deleteProfileDesc', { name: deleteConfirm ?? '' })}
+        confirmText={t('apiProfiles.delete')}
         variant="destructive"
         onConfirm={() => deleteConfirm && handleDelete(deleteConfirm)}
         onCancel={() => setDeleteConfirm(null)}
       />
 
-      {/* Unsaved Changes Confirmation */}
       <ConfirmDialog
         open={!!pendingSwitch}
-        title="Unsaved Changes"
-        description={`You have unsaved changes in "${selectedProfile}". Discard and switch to "${pendingSwitch}"?`}
-        confirmText="Discard & Switch"
+        title={t('apiProfiles.unsavedChangesTitle')}
+        description={t('apiProfiles.unsavedChangesDesc', {
+          current: selectedProfile ?? '',
+          next: pendingSwitch ?? '',
+        })}
+        confirmText={t('apiProfiles.discardSwitch')}
         variant="destructive"
         onConfirm={() => {
           setEditorHasChanges(false);
@@ -277,7 +447,6 @@ export function ApiPage() {
   );
 }
 
-/** Profile list item component */
 function ProfileListItem({
   profile,
   isSelected,
@@ -299,16 +468,19 @@ function ProfileListItem({
       )}
       onClick={onSelect}
     >
-      {/* Status indicator */}
       {profile.configured ? (
         <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
       ) : (
         <AlertCircle className="w-4 h-4 text-yellow-600 shrink-0" />
       )}
 
-      {/* Profile info */}
       <div className="flex-1 min-w-0">
-        <div className="font-medium text-sm truncate">{profile.name}</div>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="font-medium text-sm truncate">{profile.name}</div>
+          <Badge variant="outline" className="text-[10px] h-4 px-1.5 uppercase">
+            {profile.target || 'claude'}
+          </Badge>
+        </div>
         <div className="flex items-center gap-1.5 min-w-0">
           <div className="text-xs text-muted-foreground truncate flex-1">
             {profile.settingsPath}
@@ -321,7 +493,6 @@ function ProfileListItem({
         </div>
       </div>
 
-      {/* Actions */}
       <Button
         variant="ghost"
         size="icon"

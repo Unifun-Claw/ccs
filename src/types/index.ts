@@ -12,6 +12,7 @@ export type {
   EnvValue,
   ProfileMetadata,
   ProfilesRegistry,
+  CLIProxyVariantConfig,
   CLIProxyVariantsConfig,
 } from './config';
 export { isConfig, isSettings } from './config';
@@ -49,3 +50,6 @@ export type {
 // Utility types
 export { LogLevel } from './utils';
 export type { ErrorCode, ColorName, TerminalInfo, Result } from './utils';
+
+// Profile routing types
+export type { ProfileType } from './profile';

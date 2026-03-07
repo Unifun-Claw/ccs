@@ -7,14 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
-import {
-  loadDailyUsageData,
-  loadMonthlyUsageData,
-  loadSessionData,
-  loadAllUsageData,
-  loadHourlyUsageData,
-} from './data-aggregator';
+import { loadAllUsageData } from './data-aggregator';
 import type { DailyUsage, HourlyUsage, MonthlyUsage, SessionUsage } from './types';
 import {
   readDiskCache,
@@ -25,28 +18,38 @@ import {
   getCacheAge,
 } from './disk-cache';
 import { ok, info, fail } from '../../utils/ui';
+import { getCcsDir } from '../../utils/config-manager';
+import {
+  loadCachedCliproxyData,
+  startCliproxySync,
+  stopCliproxySync,
+  syncCliproxyUsage,
+} from './cliproxy-usage-syncer';
 
 // ============================================================================
 // Multi-Instance Support - Aggregate usage from CCS profiles
 // ============================================================================
 
 /** Path to CCS instances directory */
-const CCS_INSTANCES_DIR = path.join(os.homedir(), '.ccs', 'instances');
+function getCcsInstancesDir() {
+  return path.join(getCcsDir(), 'instances');
+}
 
 /**
  * Get list of CCS instance paths that have usage data
  * Only returns instances with existing projects/ directory
  */
 function getInstancePaths(): string[] {
-  if (!fs.existsSync(CCS_INSTANCES_DIR)) {
+  const instancesDir = getCcsInstancesDir();
+  if (!fs.existsSync(instancesDir)) {
     return [];
   }
 
   try {
-    const entries = fs.readdirSync(CCS_INSTANCES_DIR, { withFileTypes: true });
+    const entries = fs.readdirSync(instancesDir, { withFileTypes: true });
     return entries
       .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(CCS_INSTANCES_DIR, entry.name))
+      .map((entry) => path.join(instancesDir, entry.name))
       .filter((instancePath) => {
         // Only include instances that have a projects directory
         const projectsPath = path.join(instancePath, 'projects');
@@ -260,6 +263,14 @@ let diskCacheInitialized = false;
 // Track if background refresh is in progress
 let isRefreshing = false;
 
+// Coalesced full refresh promise shared across all usage loaders
+let pendingFullRefresh: Promise<{
+  daily: DailyUsage[];
+  hourly: HourlyUsage[];
+  monthly: MonthlyUsage[];
+  session: SessionUsage[];
+}> | null = null;
+
 /**
  * Persist cache to disk when we have enough data to be useful.
  */
@@ -285,6 +296,10 @@ async function refreshFromSource(): Promise<{
   monthly: MonthlyUsage[];
   session: SessionUsage[];
 }> {
+  // Try to sync CLIProxy snapshot before reading it.
+  // Non-fatal: syncer handles unavailability and stale fallback.
+  await syncCliproxyUsage();
+
   // Load default data (from ~/.claude/projects/ or CLAUDE_CONFIG_DIR)
   const defaultData = await loadAllUsageData();
 
@@ -324,6 +339,19 @@ async function refreshFromSource(): Promise<{
     console.log(info(`Aggregated usage data from ${instanceDataResults.length} CCS instance(s)`));
   }
 
+  // Load CLIProxy usage data (from local snapshot cache)
+  try {
+    const cliproxyData = await loadCachedCliproxyData();
+    if (cliproxyData.daily.length > 0) {
+      allDailySources.push(cliproxyData.daily);
+      allHourlySources.push(cliproxyData.hourly);
+      allMonthlySources.push(cliproxyData.monthly);
+      console.log(info('Included CLIProxy usage data'));
+    }
+  } catch (err) {
+    console.error(fail(`Failed to load CLIProxy usage data: ${err}`));
+  }
+
   // Merge all data sources
   const daily = mergeDailyData(allDailySources);
   const hourly = mergeHourlyData(allHourlySources);
@@ -344,10 +372,44 @@ async function refreshFromSource(): Promise<{
   return { daily, hourly, monthly, session };
 }
 
+async function refreshFromSourceCoalesced(force = false): Promise<{
+  daily: DailyUsage[];
+  hourly: HourlyUsage[];
+  monthly: MonthlyUsage[];
+  session: SessionUsage[];
+}> {
+  // Wait for any in-flight refresh to finish before starting a forced one
+  // to prevent concurrent refreshes competing for the same resources
+  if (force && pendingFullRefresh) {
+    await pendingFullRefresh.catch(() => {});
+  }
+
+  if (force) {
+    pendingFullRefresh = refreshFromSource().finally(() => {
+      pendingFullRefresh = null;
+    });
+    return pendingFullRefresh;
+  }
+
+  if (pendingFullRefresh) {
+    return pendingFullRefresh;
+  }
+
+  pendingFullRefresh = refreshFromSource().finally(() => {
+    pendingFullRefresh = null;
+  });
+
+  return pendingFullRefresh;
+}
+
 /**
  * Initialize in-memory cache from disk cache (lazy - called on first API request).
  */
 function ensureDiskCacheLoaded(): void {
+  // Start sync when usage APIs are actually accessed.
+  // startCliproxySync() is idempotent.
+  startCliproxySync();
+
   if (diskCacheInitialized) return;
   diskCacheInitialized = true;
 
@@ -424,28 +486,28 @@ async function getCachedData<T>(key: string, ttl: number, loader: () => Promise<
 /** Cached loader for daily usage data */
 export async function getCachedDailyData(): Promise<DailyUsage[]> {
   return getCachedData('daily', CACHE_TTL.daily, async () => {
-    return await loadDailyUsageData();
+    return (await refreshFromSourceCoalesced()).daily;
   });
 }
 
 /** Cached loader for monthly usage data */
 export async function getCachedMonthlyData(): Promise<MonthlyUsage[]> {
   return getCachedData('monthly', CACHE_TTL.monthly, async () => {
-    return await loadMonthlyUsageData();
+    return (await refreshFromSourceCoalesced()).monthly;
   });
 }
 
 /** Cached loader for session data */
 export async function getCachedSessionData(): Promise<SessionUsage[]> {
   return getCachedData('session', CACHE_TTL.session, async () => {
-    return await loadSessionData();
+    return (await refreshFromSourceCoalesced()).session;
   });
 }
 
 /** Cached loader for hourly usage data */
 export async function getCachedHourlyData(): Promise<HourlyUsage[]> {
   return getCachedData('hourly', CACHE_TTL.daily, async () => {
-    return await loadHourlyUsageData();
+    return (await refreshFromSourceCoalesced()).hourly;
   });
 }
 
@@ -454,9 +516,12 @@ export async function getCachedHourlyData(): Promise<HourlyUsage[]> {
  */
 export function clearUsageCache(): void {
   cache.clear();
+  pendingRequests.clear();
+  pendingFullRefresh = null;
   clearDiskCache();
   // Reset so next API call will try to reload from disk/source
   diskCacheInitialized = false;
+  lastFetchTimestamp = null;
 }
 
 /**
@@ -476,6 +541,9 @@ export async function prewarmUsageCache(): Promise<{
   console.log(info('Pre-warming usage cache...'));
 
   try {
+    // Start CLIProxy usage syncer early (runs in background every 5 min)
+    startCliproxySync();
+
     const diskCache = readDiskCache();
 
     // Fresh disk cache - use it directly
@@ -513,7 +581,7 @@ export async function prewarmUsageCache(): Promise<{
       // Background refresh
       if (!isRefreshing) {
         isRefreshing = true;
-        refreshFromSource()
+        refreshFromSourceCoalesced()
           .then(() => console.log(ok('Background refresh complete')))
           .catch((err) => console.error(fail(`Background refresh failed: ${err}`)))
           .finally(() => {
@@ -526,7 +594,7 @@ export async function prewarmUsageCache(): Promise<{
 
     // No usable disk cache - refresh from source (blocking for first startup only)
     console.log(info('No disk cache, loading from source...'));
-    await refreshFromSource();
+    await refreshFromSourceCoalesced();
 
     const elapsed = Date.now() - start;
     console.log(ok(`Usage cache ready (${elapsed}ms)`));
@@ -535,4 +603,21 @@ export async function prewarmUsageCache(): Promise<{
     console.error(fail(`Failed to prewarm usage cache: ${err}`));
     throw err;
   }
+}
+
+/**
+ * Shutdown usage aggregator cleanly (stops background syncer)
+ */
+export function shutdownUsageAggregator(): void {
+  stopCliproxySync();
+}
+
+/**
+ * Force refresh usage cache from all sources.
+ * Used by manual refresh endpoint.
+ */
+export async function refreshUsageCache(): Promise<void> {
+  // Ensure periodic sync is running for subsequent updates.
+  startCliproxySync();
+  await refreshFromSourceCoalesced(true);
 }

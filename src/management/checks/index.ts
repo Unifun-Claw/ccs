@@ -3,15 +3,15 @@
  */
 
 // Types and utilities
-export {
-  HealthCheck,
+export type {
   HealthCheckDetails,
   HealthCheckItem,
   HealthIssue,
-  IHealthChecker,
   Spinner,
-  createSpinner,
+  IHealthChecker,
 } from './types';
+
+export { HealthCheck, createSpinner } from './types';
 
 // System checks
 export { ClaudeCliChecker, CcsDirectoryChecker, runSystemChecks } from './system-check';
@@ -49,3 +49,6 @@ export {
 
 // OAuth checks
 export { OAuthPortsChecker, runOAuthChecks } from './oauth-check';
+
+// Image Analysis checks
+export { runImageAnalysisCheck, fixImageAnalysisConfig } from './image-analysis-check';

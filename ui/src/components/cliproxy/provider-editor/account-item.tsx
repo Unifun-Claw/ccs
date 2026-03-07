@@ -30,10 +30,20 @@ import {
   Check,
   KeyRound,
 } from 'lucide-react';
-import { cn, getProviderMinQuota, getProviderResetTime } from '@/lib/utils';
+import {
+  cn,
+  formatQuotaPercent,
+  getCodexQuotaBreakdown,
+  getQuotaFailureInfo,
+  getProviderMinQuota,
+  getProviderResetTime,
+  isClaudeQuotaResult,
+  isCodexQuotaResult,
+} from '@/lib/utils';
 import { PRIVACY_BLUR_CLASS } from '@/contexts/privacy-context';
 import { useAccountQuota, useCliproxyStats } from '@/hooks/use-cliproxy-stats';
 import { QuotaTooltipContent } from '@/components/shared/quota-tooltip-content';
+import { useTranslation } from 'react-i18next';
 import type { AccountItemProps } from './types';
 
 /**
@@ -98,12 +108,17 @@ export function AccountItem({
   selected,
   onSelectChange,
 }: AccountItemProps) {
+  const { t } = useTranslation();
+  const normalizedProvider = account.provider.toLowerCase();
+  const isCodexProvider = normalizedProvider === 'codex';
+  const isClaudeProvider = normalizedProvider === 'claude' || normalizedProvider === 'anthropic';
+
   // Fetch runtime stats to get actual lastUsedAt (more accurate than file state)
   const { data: stats } = useCliproxyStats(showQuota);
 
   // Fetch quota for all provider accounts
   const { data: quota, isLoading: quotaLoading } = useAccountQuota(
-    account.provider,
+    normalizedProvider,
     account.id,
     showQuota
   );
@@ -115,6 +130,62 @@ export function AccountItem({
   // Use shared utility functions for provider-specific quota handling
   const minQuota = getProviderMinQuota(account.provider, quota);
   const nextReset = getProviderResetTime(account.provider, quota);
+  const codexBreakdown =
+    isCodexProvider && quota && isCodexQuotaResult(quota)
+      ? getCodexQuotaBreakdown(quota.windows)
+      : null;
+  const codexQuotaRows = [
+    { label: '5h', value: codexBreakdown?.fiveHourWindow?.remainingPercent ?? null },
+    { label: 'Weekly', value: codexBreakdown?.weeklyWindow?.remainingPercent ?? null },
+  ].filter((row): row is { label: string; value: number } => row.value !== null);
+  const claudeQuotaRows =
+    isClaudeProvider && quota && isClaudeQuotaResult(quota)
+      ? [
+          {
+            label: '5h',
+            value:
+              quota.coreUsage?.fiveHour?.remainingPercent ??
+              quota.windows.find((window) => window.rateLimitType === 'five_hour')
+                ?.remainingPercent ??
+              null,
+          },
+          {
+            label: 'Weekly',
+            value:
+              quota.coreUsage?.weekly?.remainingPercent ??
+              quota.windows.find((window) =>
+                [
+                  'seven_day',
+                  'seven_day_opus',
+                  'seven_day_sonnet',
+                  'seven_day_oauth_apps',
+                  'seven_day_cowork',
+                ].includes(window.rateLimitType)
+              )?.remainingPercent ??
+              null,
+          },
+        ].filter((row): row is { label: string; value: number } => row.value !== null)
+      : [];
+  const dualWindowQuotaRows = isCodexProvider
+    ? codexQuotaRows
+    : isClaudeProvider
+      ? claudeQuotaRows
+      : [];
+  const minQuotaLabel = minQuota !== null ? formatQuotaPercent(minQuota) : null;
+  const minQuotaValue = minQuotaLabel !== null ? Number(minQuotaLabel) : null;
+  const failureInfo = getQuotaFailureInfo(quota);
+  const FailureIcon =
+    failureInfo?.label === 'Reauth'
+      ? KeyRound
+      : failureInfo?.tone === 'warning'
+        ? AlertTriangle
+        : AlertCircle;
+  const failureBadgeClass =
+    failureInfo?.tone === 'warning'
+      ? 'border-amber-500/50 text-amber-600 dark:text-amber-400'
+      : failureInfo?.tone === 'destructive'
+        ? 'border-destructive/50 text-destructive'
+        : 'border-muted-foreground/50 text-muted-foreground';
 
   return (
     <div
@@ -308,7 +379,7 @@ export function AccountItem({
               <Loader2 className="w-3 h-3 animate-spin" />
               <span>Loading quota...</span>
             </div>
-          ) : minQuota !== null ? (
+          ) : minQuotaValue !== null ? (
             <div className="space-y-1.5">
               {/* Status indicator based on runtime usage, not file state */}
               <div className="flex items-center gap-1.5 text-xs">
@@ -337,62 +408,84 @@ export function AccountItem({
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="flex items-center gap-2">
-                      <Progress
-                        value={Math.max(0, Math.min(100, minQuota))}
-                        className="h-2 flex-1"
-                        indicatorClassName={getQuotaColor(minQuota)}
-                      />
-                      <span className="text-xs font-medium w-10 text-right">{minQuota}%</span>
-                    </div>
+                    {dualWindowQuotaRows.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {dualWindowQuotaRows.map((row) => (
+                          <div key={row.label} className="flex items-center gap-2">
+                            <span className="w-10 text-[10px] text-muted-foreground">
+                              {row.label}
+                            </span>
+                            <Progress
+                              value={Math.max(0, Math.min(100, row.value))}
+                              className="h-2 flex-1"
+                              indicatorClassName={getQuotaColor(row.value)}
+                            />
+                            <span className="text-xs font-medium w-10 text-right">
+                              {row.value}%
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Progress
+                          value={Math.max(0, Math.min(100, minQuotaValue))}
+                          className="h-2 flex-1"
+                          indicatorClassName={getQuotaColor(minQuotaValue)}
+                        />
+                        <span className="text-xs font-medium w-10 text-right">
+                          {minQuotaLabel}%
+                        </span>
+                      </div>
+                    )}
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs">
-                    {quota && <QuotaTooltipContent quota={quota} resetTime={nextReset} />}
+                    <QuotaTooltipContent quota={quota} resetTime={nextReset} />
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
-          ) : quota?.needsReauth ? (
+          ) : quota?.success ? (
+            <div className="flex items-center gap-1.5">
+              <Badge
+                variant="outline"
+                className="text-[10px] h-5 px-2 gap-1 border-muted-foreground/50 text-muted-foreground"
+              >
+                <HelpCircle className="w-3 h-3" />
+                {t('accountCard.quotaUnavailable')}
+              </Badge>
+            </div>
+          ) : failureInfo ? (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="flex items-center gap-1.5">
                     <Badge
                       variant="outline"
-                      className="text-[10px] h-5 px-2 gap-1 border-amber-500/50 text-amber-600 dark:text-amber-400"
+                      className={cn('text-[10px] h-5 px-2 gap-1', failureBadgeClass)}
                     >
-                      <KeyRound className="w-3 h-3" />
-                      Reauth
+                      <FailureIcon className="w-3 h-3" />
+                      {failureInfo.label}
                     </Badge>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-[220px]">
-                  <p className="text-xs">
-                    {quota.error?.includes('No refresh token')
-                      ? 'No refresh token available. Remove and re-add account to fix.'
-                      : quota.error?.includes('refresh') || quota.error?.includes('Invalid')
-                        ? `Auto-refresh failed: ${quota.error}`
-                        : `Token issue: ${quota.error || 'Re-authenticate required'}`}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : quota?.error || (quota && !quota.success) ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-1.5">
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] h-5 px-2 gap-1 border-muted-foreground/50 text-muted-foreground"
-                    >
-                      <AlertCircle className="w-3 h-3" />
-                      N/A
-                    </Badge>
+                <TooltipContent side="bottom" className="max-w-[260px]">
+                  <div className="space-y-1 text-xs">
+                    <p>{failureInfo.summary}</p>
+                    {failureInfo.actionHint && (
+                      <p className="text-muted-foreground">{failureInfo.actionHint}</p>
+                    )}
+                    {failureInfo.technicalDetail && (
+                      <p className="font-mono text-[11px] text-muted-foreground">
+                        {failureInfo.technicalDetail}
+                      </p>
+                    )}
+                    {failureInfo.rawDetail && (
+                      <pre className="whitespace-pre-wrap break-all rounded bg-muted/40 px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                        {failureInfo.rawDetail}
+                      </pre>
+                    )}
                   </div>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <p className="text-xs">{quota?.error || 'Quota information unavailable'}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

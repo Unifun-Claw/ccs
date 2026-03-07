@@ -13,6 +13,7 @@ import { setupGracefulShutdown } from '../web-server/shutdown';
 import { ensureCliproxyService } from '../cliproxy/service-manager';
 import { CLIPROXY_DEFAULT_PORT } from '../cliproxy/config-generator';
 import { initUI, header, ok, info, warn, fail } from '../utils/ui';
+import { extractOption, hasAnyFlag } from './arg-extractor';
 
 interface ConfigOptions {
   port?: number;
@@ -25,25 +26,28 @@ interface ConfigOptions {
 function parseArgs(args: string[]): ConfigOptions {
   const result: ConfigOptions = {};
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+  if (hasAnyFlag(args, ['--help', '-h'])) {
+    showHelp();
+    process.exit(0);
+  }
 
-    if ((arg === '--port' || arg === '-p') && args[i + 1]) {
-      const port = parseInt(args[++i], 10);
-      if (!isNaN(port) && port > 0 && port < 65536) {
-        result.port = port;
-      } else {
-        console.error(fail('Invalid port number'));
-        process.exit(1);
-      }
-    } else if (arg === '--dev') {
-      result.dev = true;
-    } else if (arg === '--help' || arg === '-h') {
-      showHelp();
-      process.exit(0);
+  const portOption = extractOption(args, ['--port', '-p']);
+  if (portOption.found) {
+    if (portOption.missingValue || !portOption.value) {
+      console.error(fail('Invalid port number'));
+      process.exit(1);
+    }
+
+    const port = parseInt(portOption.value, 10);
+    if (!isNaN(port) && port > 0 && port < 65536) {
+      result.port = port;
+    } else {
+      console.error(fail('Invalid port number'));
+      process.exit(1);
     }
   }
 
+  result.dev = hasAnyFlag(args, ['--dev']);
   return result;
 }
 
@@ -62,6 +66,20 @@ function showHelp(): void {
   console.log('    auth show        Display current auth status');
   console.log('    auth disable     Disable authentication');
   console.log('');
+  console.log('  image-analysis     Manage image analysis settings');
+  console.log('    --enable         Enable image analysis via CLIProxy');
+  console.log('    --disable        Disable image analysis');
+  console.log('    --timeout <s>    Set analysis timeout (seconds)');
+  console.log('    --set-model <p> <m>  Set model for provider');
+  console.log('');
+  console.log('  thinking           Manage thinking/reasoning settings');
+  console.log('    --mode <mode>    Set mode (auto, off, manual)');
+  console.log('    --override <l>   Set persistent override level');
+  console.log('    --clear-override Remove persistent override');
+  console.log('    --tier <t> <l>   Set tier default level');
+  console.log('    --provider-override <p> <t> <l> Set provider tier override');
+  console.log('    --clear-provider-override <p> [t] Remove provider override');
+  console.log('');
   console.log('Options:');
   console.log('  --port, -p PORT    Specify server port (default: auto-detect)');
   console.log('  --dev              Development mode with Vite HMR');
@@ -72,6 +90,10 @@ function showHelp(): void {
   console.log('  ccs config --port 3000  Use specific port');
   console.log('  ccs config --dev        Development mode with hot reload');
   console.log('  ccs config auth setup   Configure dashboard login');
+  console.log('  ccs config image-analysis          Show image settings');
+  console.log('  ccs config image-analysis --enable Enable feature');
+  console.log('  ccs config thinking                Show thinking settings');
+  console.log('  ccs config thinking --mode auto    Set auto mode');
   console.log('');
 }
 
@@ -83,6 +105,20 @@ export async function handleConfigCommand(args: string[]): Promise<void> {
   if (args[0] === 'auth') {
     const { handleConfigAuthCommand } = await import('./config-auth');
     await handleConfigAuthCommand(args.slice(1));
+    return;
+  }
+
+  // Route image-analysis subcommand
+  if (args[0] === 'image-analysis') {
+    const { handleConfigImageAnalysisCommand } = await import('./config-image-analysis-command');
+    await handleConfigImageAnalysisCommand(args.slice(1));
+    return;
+  }
+
+  // Route thinking subcommand
+  if (args[0] === 'thinking') {
+    const { handleConfigThinkingCommand } = await import('./config-thinking-command');
+    await handleConfigThinkingCommand(args.slice(1));
     return;
   }
 
@@ -124,10 +160,10 @@ export async function handleConfigCommand(args: string[]): Promise<void> {
 
   try {
     // Start server
-    const { server, wss } = await startServer({ port, dev: options.dev });
+    const { server, wss, cleanup } = await startServer({ port, dev: options.dev });
 
     // Setup graceful shutdown
-    setupGracefulShutdown(server, wss);
+    setupGracefulShutdown(server, wss, cleanup);
 
     const url = `http://localhost:${port}`;
 

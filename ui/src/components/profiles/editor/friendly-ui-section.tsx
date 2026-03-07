@@ -19,10 +19,13 @@ import { ChevronRight, Settings2, Plus } from 'lucide-react';
 import { isOpenRouterProfile, extractTierMapping, applyTierMapping } from './utils';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import i18n from '@/lib/i18n';
 import type { Settings, SettingsResponse } from './types';
+import type { CliTarget } from '@/lib/api-client';
 
 interface FriendlyUISectionProps {
   profileName: string;
+  target: CliTarget;
   data: SettingsResponse | undefined;
   currentSettings: Settings | undefined;
   newEnvKey: string;
@@ -36,6 +39,7 @@ interface FriendlyUISectionProps {
 
 export function FriendlyUISection({
   profileName,
+  target,
   data,
   currentSettings,
   newEnvKey,
@@ -78,7 +82,7 @@ export function FriendlyUISection({
       onEnvValueChange('ANTHROPIC_DEFAULT_HAIKU_MODEL', modelId);
     }
     // Show feedback toast
-    toast.success('Applied model to all tiers', { duration: 2000 });
+    toast.success(i18n.t('commonToast.appliedModelAllTiers'), { duration: 2000 });
   };
 
   // Handle tier mapping change
@@ -263,7 +267,7 @@ export function FriendlyUISection({
             value="info"
             className="h-full mt-0 border-0 p-0 data-[state=inactive]:hidden"
           >
-            <InfoSection profileName={profileName} data={data} />
+            <InfoSection profileName={profileName} target={target} data={data} />
           </TabsContent>
         </div>
       </Tabs>

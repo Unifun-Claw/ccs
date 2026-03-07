@@ -1,6 +1,6 @@
-# CLAUDE.md
+# Agent Guidelines
 
-AI-facing guidance for Claude Code when working with this repository.
+AI-facing guidance for agent tooling when working with this repository.
 
 ## Critical Constraints (NEVER VIOLATE)
 
@@ -17,7 +17,7 @@ Tests set `process.env.CCS_HOME` to a temp directory. Code using `os.homedir()` 
 
 ## Core Function
 
-CLI wrapper for instant switching between multiple Claude accounts and alternative models (GLM, GLMT, Kimi). See README.md for user documentation.
+CLI wrapper for instant switching between multiple provider accounts and alternative models (GLM, GLMT, Kimi). See README.md for user documentation.
 
 ## Design Principles (ENFORCE STRICTLY)
 
@@ -43,6 +43,7 @@ CLI wrapper for instant switching between multiple Claude accounts and alternati
 | Mistake | Consequence | Correct Action |
 |---------|-------------|----------------|
 | Running `validate` without `format` first | format:check fails | Run `bun run format` BEFORE validate |
+| Assuming maintainability check is always strict | PR/feature branches run warning mode by default | Use `bun run maintainability:check:strict` before merge when touching debt-sensitive code |
 | Using `chore:` for dev→main PR | No npm release triggered | Use `feat:` or `fix:` prefix |
 | Committing directly to `main` or `dev` | Bypasses CI/review | Always use PRs |
 | Manual version bump or git tag | Conflicts with semantic-release | Let CI handle versioning |
@@ -51,7 +52,7 @@ CLI wrapper for instant switching between multiple Claude accounts and alternati
 
 ## Quality Gates (MANDATORY)
 
-Quality gates MUST pass before committing. **Both projects have identical workflow.**
+Quality gates MUST pass before pushing. **Both projects have identical workflow.**
 
 ### Pre-Commit Sequence (FOLLOW THIS ORDER)
 
@@ -59,7 +60,8 @@ Quality gates MUST pass before committing. **Both projects have identical workfl
 # Main project (from repo root)
 bun run format              # Step 1: Fix formatting
 bun run lint:fix            # Step 2: Fix lint issues
-bun run validate            # Step 3: Final check (must pass)
+bun run validate            # Step 3: Full gate (typecheck + lint + format + maintainability + tests)
+bun run validate:ci-parity  # Step 4: CI parity gate (build + validate + base branch check)
 
 # UI project (if UI changed)
 cd ui
@@ -77,7 +79,7 @@ bun run validate            # Step 3: Final check (must pass)
 
 | Project | Command | Runs |
 |---------|---------|------|
-| Main | `bun run validate` | typecheck + lint:fix + format:check + test:all |
+| Main | `bun run validate` | typecheck + lint:fix + format:check + maintainability:check + test:all |
 | UI | `bun run validate` | typecheck + lint:fix + format:check |
 
 ### ESLint Rules (ALL errors)
@@ -104,8 +106,31 @@ bun run validate            # Step 3: Final check (must pass)
 ### Automatic Enforcement
 
 - `prepublishOnly` / `prepack` runs `build:all` + `validate` + `sync-version.js`
-- CI/CD runs `bun run validate` on every PR
-- husky pre-commit hooks enforce conventional commits
+- CI/CD runs `bun run validate` on every PR (maintainability is warning mode on PR events)
+- husky `pre-commit` runs quick lint/type/format checks
+- husky `pre-push` runs `bun run validate:ci-parity` to block CI drift before push
+
+### Maintainability Baseline Gate
+
+- Baseline file: `docs/metrics/maintainability-baseline.json`
+- Metric collector/check script: `scripts/maintainability-baseline.js`
+- Branch-aware gate wrapper: `scripts/maintainability-check.js`
+- Enforcement path: `bun run maintainability:check` (included in `bun run validate`)
+- Gate modes:
+  - `strict`: protected branches (`main`, `dev`, `hotfix/*`, `kai/hotfix-*`) and equivalent CI refs
+  - `warn`: pull request CI and non-protected local branches (non-blocking for parallel PR workflow)
+  - override commands:
+    - `bun run maintainability:check:strict`
+    - `bun run maintainability:check:warn`
+- Gated metrics (must not increase vs baseline):
+  - `processExitReferenceCount`
+  - `synchronousFsApiReferenceCount`
+- Informational metrics (collected but not gated):
+  - `largeFileCountOver350Loc`
+- Baseline update policy:
+  1. Prefer reducing the metric and keeping the baseline unchanged.
+  2. On protected-branch integration (strict mode), if increase is intentional and accepted, run `bun run maintainability:baseline`.
+  3. Commit both the code change and `docs/metrics/maintainability-baseline.json`, and state reason in PR description.
 
 ## Critical Constraints (NEVER VIOLATE)
 
@@ -113,7 +138,7 @@ bun run validate            # Step 3: Final check (must pass)
    - **Scope:** CCS CLI terminal output (`src/` code that prints to stdout/stderr)
    - **Does NOT apply to:** PR descriptions, commit messages, documentation, comments, AI conversations
 2. **TTY-aware colors** - Respect NO_COLOR env var
-3. **Non-invasive** - NEVER modify `~/.claude/settings.json` without explicit user request and confirmation (exception: `ccs persist` command)
+3. **Non-invasive** - NEVER modify external tool settings (`~/.claude/settings.json`) without explicit user request and confirmation (exception: `ccs persist` command)
 4. **Cross-platform parity** - bash/PowerShell/Node.js must behave identically
 5. **CLI documentation** - ALL CLI changes MUST update respective `--help` handler (see table below)
 6. **Idempotent** - All install operations safe to run multiple times
@@ -129,8 +154,10 @@ bun run validate            # Step 3: Final check (must pass)
 | `ccs cliproxy --help` | `src/commands/cliproxy-command.ts` → `showHelp()` |
 | `ccs config --help` | `src/commands/config-command.ts` → `showHelp()` |
 | `ccs copilot --help` | `src/commands/copilot-command.ts` → `handleHelp()` |
+| `ccs cursor --help` | `src/commands/cursor-command.ts` → `handleHelp()` |
 | `ccs doctor --help` | `src/commands/doctor-command.ts` → `showHelp()` |
 | `ccs migrate --help` | `src/commands/migrate-command.ts` → `printMigrateHelp()` |
+| `ccs env --help` | `src/commands/env-command.ts` → `showHelp()` |
 | `ccs persist --help` | `src/commands/persist-command.ts` → `showHelp()` |
 | `ccs setup --help` | `src/commands/setup-command.ts` → `showHelp()` |
 
@@ -353,7 +380,10 @@ rm -rf ~/.ccs             # Clean environment
 **Quality (BLOCKERS):**
 - [ ] `bun run format` — formatting fixed
 - [ ] `bun run validate` — all checks pass
+- [ ] `bun run validate:ci-parity` — CI parity passed (also enforced by pre-push hook)
 - [ ] `cd ui && bun run format && bun run validate` — if UI changed
+- [ ] If touching debt-sensitive code, run `bun run maintainability:check:strict` before opening/merging PR
+- [ ] If strict mode fails and increase is intentional: `bun run maintainability:baseline` and commit `docs/metrics/maintainability-baseline.json`
 
 **Code:**
 - [ ] Conventional commit format (`feat:`, `fix:`, etc.)

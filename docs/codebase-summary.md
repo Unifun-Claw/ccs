@@ -1,8 +1,8 @@
 # CCS Codebase Summary
 
-Last Updated: 2026-01-06
+Last Updated: 2026-02-24
 
-Comprehensive overview of the modularized CCS codebase structure following the Phase 9 modularization effort (Settings, Analytics, Auth Monitor splits + Test Infrastructure), v7.1 Remote CLIProxy feature, v7.2 Kiro + GitHub Copilot (ghcp) OAuth providers, and v7.14 Hybrid Quota Management.
+Comprehensive overview of the modularized CCS codebase structure following the Phase 9 modularization effort (Settings, Analytics, Auth Monitor splits + Test Infrastructure), v7.1 Remote CLIProxy feature, v7.2 Kiro + GitHub Copilot (ghcp) OAuth providers, v7.14 Hybrid Quota Management, v7.34 Image Analysis Hook, and account-context validation hardening.
 
 ## Repository Structure
 
@@ -45,13 +45,26 @@ src/
 │
 ├── commands/                 # CLI command handlers
 │   ├── cliproxy-command.ts   # CLIProxy subcommand handling
+│   ├── config-command.ts     # Config management commands
+│   ├── config-image-analysis-command.ts  # Image analysis hook config (NEW v7.34)
 │   ├── doctor-command.ts     # Health diagnostics
+│   ├── env-command.ts        # Export shell env vars for third-party tools (v7.39)
 │   ├── help-command.ts       # Help text generation
 │   ├── install-command.ts    # Install/uninstall logic
 │   ├── shell-completion-command.ts
 │   ├── sync-command.ts       # Symlink synchronization
 │   ├── update-command.ts     # Self-update logic
 │   └── version-command.ts    # Version display
+│
+├── targets/                  # Multi-target adapter system (NEW)
+│   ├── index.ts              # Barrel export
+│   ├── target-adapter.ts     # TargetAdapter interface contract
+│   ├── target-registry.ts    # Registry for runtime adapter lookup
+│   ├── target-resolver.ts    # Resolution logic (flag > config > argv[0])
+│   ├── claude-adapter.ts     # Claude Code CLI implementation
+│   ├── droid-adapter.ts      # Factory Droid CLI implementation
+│   ├── droid-detector.ts     # Droid binary detection & version checks
+│   └── droid-config-manager.ts  # ~/.factory/settings.json management
 │
 ├── auth/                     # Authentication module
 │   ├── index.ts              # Barrel export
@@ -116,7 +129,8 @@ src/
 ├── management/               # Doctor diagnostics
 │   ├── index.ts              # Barrel export
 │   ├── checks/               # Diagnostic checks
-│   │   └── index.ts
+│   │   ├── index.ts
+│   │   └── image-analysis-check.ts  # Image hook validation (NEW v7.34)
 │   └── repair/               # Auto-repair logic
 │       └── index.ts
 │
@@ -136,6 +150,15 @@ src/
 │   │   └── spinners.ts       # Progress spinners
 │   ├── websearch/            # Search tool integrations
 │   │   └── index.ts
+│   ├── hooks/                # Claude Code hooks (NEW v7.34)
+│   │   ├── index.ts
+│   │   ├── image-analyzer-hook-installer.ts
+│   │   ├── image-analyzer-hook-configuration.ts
+│   │   ├── image-analyzer-profile-hook-injector.ts
+│   │   └── get-image-analysis-hook-env.ts
+│   ├── image-analysis/       # Image analysis hook utilities (NEW v7.34)
+│   │   ├── index.ts
+│   │   └── hook-installer.ts
 │   └── [utility files...]
 │
 └── web-server/               # Express web server (heavily modularized)
@@ -168,13 +191,70 @@ src/
 | Category | Directories | Purpose |
 |----------|-------------|---------|
 | Core | `commands/`, `errors/` | CLI commands, error handling |
+| Targets | `targets/` | Multi-CLI adapter pattern (Claude Code, Factory Droid, extensible) |
 | Auth | `auth/`, `cliproxy/auth/` | Authentication across providers |
 | Config | `config/`, `types/` | Configuration & type definitions |
 | Providers | `cliproxy/`, `copilot/`, `glmt/` | Provider integrations (7 CLIProxy providers: gemini, codex, agy, qwen, iflow, kiro, ghcp) |
 | Quota | `cliproxy/quota-*.ts`, `account-manager.ts` | Hybrid quota management (v7.14) |
 | Remote Proxy | `cliproxy/remote-*.ts`, `proxy-config-resolver.ts` | Remote CLIProxy support (v7.1) |
+| Image Analysis | `utils/image-analysis/`, `utils/hooks/` | Vision model proxying (v7.34) |
 | Services | `web-server/`, `api/` | HTTP server, API services |
 | Utilities | `utils/`, `management/` | Helpers, diagnostics |
+
+### Account Context Metadata Flow
+
+- Source fields: `accounts.<name>.context_mode`, `accounts.<name>.context_group`, `accounts.<name>.continuity_mode` in `~/.ccs/config.yaml`.
+- Runtime policy resolver: `src/auth/account-context.ts`.
+- Metadata storage normalization: `src/auth/profile-registry.ts`.
+- API write validation: `PUT /api/config` in `src/web-server/routes/config-routes.ts`.
+- Rules:
+  - mode is isolation-first (`isolated` default, `shared` opt-in)
+  - shared mode requires non-empty valid `context_group`
+  - shared mode continuity depth is `standard` by default, optional `deeper`
+  - `context_group` is normalized (trim + lowercase + whitespace collapse to `-`)
+  - API route rejects `context_group`/`continuity_mode` when mode is not `shared`
+  - registry normalization drops malformed persisted `context_group` values
+
+### Target Adapter Module
+
+The targets module provides an extensible interface for dispatching profiles to different CLI implementations.
+
+**Key components:**
+
+1. **TargetAdapter Interface** - Contract that each CLI implementation must fulfill:
+   - `detectBinary()` - Find CLI binary on system (platform-specific)
+   - `prepareCredentials()` - Deliver credentials (env vars vs config file writes)
+   - `buildArgs()` - Construct target-specific argument list
+   - `buildEnv()` - Construct environment for target CLI
+   - `exec()` - Spawn target process (cross-platform)
+   - `supportsProfileType()` - Verify profile compatibility
+
+2. **Target Resolution** - Priority order:
+   - `--target <cli>` flag (CLI argument)
+   - Per-profile `target` field (from config.yaml)
+   - `argv[0]` detection (busybox pattern: `ccsd` → droid)
+   - Default: `claude`
+
+3. **Implementations:**
+   - **ClaudeAdapter** - Wraps existing behavior; delivers credentials via environment variables
+   - **DroidAdapter** - New; writes to ~/.factory/settings.json and spawns with `-m custom:ccs-<profile>` flag
+
+4. **Registry** - Map-based lookup (O(1)) for registered adapters at runtime
+
+**Usage flow:**
+```
+Profile resolution (existing)
+  ↓
+Target resolution (via resolver.ts)
+  ↓
+Get adapter from registry
+  ↓
+Prepare credentials (adapter.prepareCredentials)
+  ↓
+Build args & env (adapter.buildArgs, buildEnv)
+  ↓
+Spawn target CLI (adapter.exec)
+```
 
 ---
 
@@ -452,10 +532,12 @@ export type { ProviderEditorProps } from './provider-editor';
 
 ```
 tests/
-├── unit/                     # Unit tests (6 core test files)
+├── unit/                     # Unit tests (7 core test files)
 │   ├── data-aggregator.test.ts
 │   ├── cliproxy/
 │   │   └── remote-proxy-client.test.ts
+│   ├── commands/
+│   │   └── env-command.test.ts
 │   ├── jsonl-parser.test.ts
 │   ├── model-pricing.test.ts
 │   ├── unified-config.test.ts
@@ -474,14 +556,12 @@ tests/
 
 | Metric | Value |
 |--------|-------|
-| CLI Tests | 539 |
-| UI Tests | 99 |
-| Total Tests | 638 |
-| Passing | 612 |
+| Total Tests | 1440 |
+| Passing | 1440 |
 | Skipped | 6 |
-| Failed | 0 (CLI), 26 (UI - jsdom setup) |
+| Failed | 0 |
 | Coverage Threshold | 90% |
-| Test Files | 38 |
+| Test Files | 41 |
 
 ---
 

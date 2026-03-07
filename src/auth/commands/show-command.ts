@@ -7,6 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { initUI, header, color, fail, table } from '../../utils/ui';
+import { resolveAccountContextPolicy, formatAccountContextPolicy } from '../account-context';
 import { exitWithError } from '../../errors';
 import { ExitCode } from '../../errors/exit-codes';
 import { CommandContext, ProfileOutput, parseArgs } from './types';
@@ -26,10 +27,16 @@ export async function handleShow(ctx: CommandContext, args: string[]): Promise<v
   }
 
   try {
-    const profile = ctx.registry.getProfile(profileName);
-    const defaultProfile = ctx.registry.getDefaultProfile();
+    // Use merged profiles (checks unified config first, falls back to legacy)
+    const allProfiles = ctx.registry.getAllProfilesMerged();
+    const profile = allProfiles[profileName];
+    if (!profile) {
+      exitWithError(`Profile not found: ${profileName}`, ExitCode.PROFILE_ERROR);
+    }
+    const defaultProfile = ctx.registry.getDefaultResolved();
     const isDefault = profileName === defaultProfile;
     const instancePath = ctx.instanceMgr.getInstancePath(profileName);
+    const contextPolicy = resolveAccountContextPolicy(profile);
 
     // Count sessions
     let sessionCount = 0;
@@ -51,8 +58,12 @@ export async function handleShow(ctx: CommandContext, args: string[]): Promise<v
         is_default: isDefault,
         created: profile.created,
         last_used: profile.last_used || null,
+        context_mode: contextPolicy.mode,
+        context_group: contextPolicy.group || null,
+        continuity_mode: contextPolicy.mode === 'shared' ? contextPolicy.continuityMode : null,
         instance_path: instancePath,
         session_count: sessionCount,
+        ...(profile.bare ? { bare: true } : {}),
       };
       console.log(JSON.stringify(output, null, 2));
       return;
@@ -69,6 +80,8 @@ export async function handleShow(ctx: CommandContext, args: string[]): Promise<v
       ['Instance', instancePath],
       ['Created', new Date(profile.created).toLocaleString()],
       ['Last Used', profile.last_used ? new Date(profile.last_used).toLocaleString() : 'Never'],
+      ['Context', formatAccountContextPolicy(contextPolicy)],
+      ...(profile.bare ? [['Bare', 'yes (no shared symlinks)']] : []),
       ['Sessions', `${sessionCount}`],
     ];
 

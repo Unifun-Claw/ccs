@@ -10,45 +10,38 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
   agy: {
     provider: 'agy',
     displayName: 'Antigravity',
-    defaultModel: 'gemini-claude-opus-4-5-thinking',
+    defaultModel: 'claude-opus-4-6-thinking',
     models: [
       {
-        id: 'gemini-claude-opus-4-5-thinking',
-        name: 'Claude Opus 4.5 Thinking',
-        description: 'Most capable, extended thinking',
+        id: 'claude-opus-4-6-thinking',
+        name: 'Claude Opus 4.6 Thinking',
+        description: 'Latest flagship, extended thinking',
+        // TODO: Re-enable when Antigravity backend supports 1M context (currently 256k)
+        // extendedContext: true,
+        extendedContext: false,
         presetMapping: {
-          default: 'gemini-claude-opus-4-5-thinking',
-          opus: 'gemini-claude-opus-4-5-thinking',
-          sonnet: 'gemini-claude-sonnet-4-5-thinking',
-          haiku: 'gemini-claude-sonnet-4-5',
+          default: 'claude-opus-4-6-thinking',
+          opus: 'claude-opus-4-6-thinking',
+          sonnet: 'claude-sonnet-4-6',
+          haiku: 'claude-sonnet-4-6',
         },
       },
       {
-        id: 'gemini-claude-sonnet-4-5-thinking',
-        name: 'Claude Sonnet 4.5 Thinking',
-        description: 'Balanced with extended thinking',
+        id: 'claude-sonnet-4-6',
+        name: 'Claude Sonnet 4.6',
+        description: 'Latest Sonnet with thinking budget support',
         presetMapping: {
-          default: 'gemini-claude-sonnet-4-5-thinking',
-          opus: 'gemini-claude-opus-4-5-thinking',
-          sonnet: 'gemini-claude-sonnet-4-5-thinking',
-          haiku: 'gemini-claude-sonnet-4-5',
-        },
-      },
-      {
-        id: 'gemini-claude-sonnet-4-5',
-        name: 'Claude Sonnet 4.5',
-        description: 'Fast and capable',
-        presetMapping: {
-          default: 'gemini-claude-sonnet-4-5',
-          opus: 'gemini-claude-opus-4-5-thinking',
-          sonnet: 'gemini-claude-sonnet-4-5',
-          haiku: 'gemini-claude-sonnet-4-5',
+          default: 'claude-sonnet-4-6',
+          opus: 'claude-opus-4-6-thinking',
+          sonnet: 'claude-sonnet-4-6',
+          haiku: 'claude-sonnet-4-6',
         },
       },
       {
         id: 'gemini-3-pro-preview',
         name: 'Gemini 3 Pro',
         description: 'Google latest model via Antigravity',
+        extendedContext: true,
         presetMapping: {
           default: 'gemini-3-pro-preview',
           opus: 'gemini-3-pro-preview',
@@ -60,6 +53,7 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         id: 'gemini-3-flash-preview',
         name: 'Gemini 3 Flash',
         description: 'Fast Gemini model via Antigravity',
+        extendedContext: true,
         presetMapping: {
           default: 'gemini-3-flash-preview',
           opus: 'gemini-3-pro-preview',
@@ -79,6 +73,7 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         name: 'Gemini 3 Pro',
         tier: 'paid',
         description: 'Latest model, requires paid Google account',
+        extendedContext: true,
         presetMapping: {
           default: 'gemini-3-pro-preview',
           opus: 'gemini-3-pro-preview',
@@ -91,6 +86,7 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         name: 'Gemini 3 Flash',
         tier: 'paid',
         description: 'Fast Gemini 3 model, requires paid Google account',
+        extendedContext: true,
         presetMapping: {
           default: 'gemini-3-flash-preview',
           opus: 'gemini-3-pro-preview',
@@ -102,6 +98,7 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         id: 'gemini-2.5-pro',
         name: 'Gemini 2.5 Pro',
         description: 'Stable, works with free Google account',
+        extendedContext: true,
         presetMapping: {
           default: 'gemini-2.5-pro',
           opus: 'gemini-2.5-pro',
@@ -114,26 +111,37 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
   codex: {
     provider: 'codex',
     displayName: 'Codex',
-    defaultModel: 'gpt-5.2-codex',
+    defaultModel: 'gpt-5.3-codex',
     models: [
+      {
+        id: 'gpt-5.3-codex',
+        name: 'GPT-5.3 Codex',
+        description: 'Supports up to xhigh effort',
+        presetMapping: {
+          default: 'gpt-5.3-codex',
+          opus: 'gpt-5.3-codex',
+          sonnet: 'gpt-5.3-codex',
+          haiku: 'gpt-5.1-codex-mini',
+        },
+      },
       {
         id: 'gpt-5.2-codex',
         name: 'GPT-5.2 Codex',
-        description: 'Full reasoning support (xhigh)',
+        description: 'Previous stable Codex model',
         presetMapping: {
           default: 'gpt-5.2-codex',
           opus: 'gpt-5.2-codex',
           sonnet: 'gpt-5.2-codex',
-          haiku: 'gpt-5-mini',
+          haiku: 'gpt-5.1-codex-mini',
         },
       },
       {
         id: 'gpt-5-mini',
         name: 'GPT-5 Mini',
-        description: 'Fast, capped at high reasoning (no xhigh)',
+        description: 'Fast, capped at high effort (no xhigh)',
         presetMapping: {
           default: 'gpt-5-mini',
-          opus: 'gpt-5.2-codex',
+          opus: 'gpt-5.3-codex',
           sonnet: 'gpt-5-mini',
           haiku: 'gpt-5-mini',
         },
@@ -144,9 +152,9 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         description: 'Legacy most capable Codex model',
         presetMapping: {
           default: 'gpt-5.1-codex-max',
-          opus: 'gpt-5.1-codex-max-high',
+          opus: 'gpt-5.1-codex-max',
           sonnet: 'gpt-5.1-codex-max',
-          haiku: 'gpt-5.1-codex-mini-high',
+          haiku: 'gpt-5.1-codex-mini',
         },
       },
       {
@@ -170,29 +178,148 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
   qwen: {
     provider: 'qwen',
     displayName: 'Qwen',
-    defaultModel: 'qwen-coder-plus',
+    defaultModel: 'qwen3-coder-plus',
     models: [
       {
-        id: 'qwen-coder-plus',
-        name: 'Qwen Coder Plus',
-        description: 'Alibaba code-focused model',
+        id: 'qwen3-coder-plus',
+        name: 'Qwen3 Coder Plus',
+        description: 'Code-focused model (1M context)',
+        presetMapping: {
+          default: 'qwen3-coder-plus',
+          opus: 'qwen3-max',
+          sonnet: 'qwen3-coder-plus',
+          haiku: 'qwen3-coder-flash',
+        },
       },
       {
-        id: 'qwen-max',
-        name: 'Qwen Max',
-        description: 'Most capable Qwen model',
+        id: 'qwen3-max',
+        name: 'Qwen3 Max',
+        description: 'Flagship model (256K context)',
+        presetMapping: {
+          default: 'qwen3-max',
+          opus: 'qwen3-max',
+          sonnet: 'qwen3-coder-plus',
+          haiku: 'qwen3-coder-flash',
+        },
+      },
+      {
+        id: 'qwen3-max-preview',
+        name: 'Qwen3 Max Preview',
+        description: 'Preview with thinking support (256K)',
+        presetMapping: {
+          default: 'qwen3-max-preview',
+          opus: 'qwen3-max-preview',
+          sonnet: 'qwen3-max',
+          haiku: 'qwen3-coder-flash',
+        },
+      },
+      {
+        id: 'qwen3-235b',
+        name: 'Qwen3 235B',
+        description: 'Large 235B A22B model',
+        presetMapping: {
+          default: 'qwen3-235b',
+          opus: 'qwen3-max',
+          sonnet: 'qwen3-235b',
+          haiku: 'qwen3-coder-flash',
+        },
+      },
+      {
+        id: 'qwen3-vl-plus',
+        name: 'Qwen3 VL Plus',
+        description: 'Vision-language multimodal',
+      },
+      {
+        id: 'qwen3-coder-flash',
+        name: 'Qwen3 Coder Flash',
+        description: 'Fast code generation',
+      },
+      {
+        id: 'qwen3-32b',
+        name: 'Qwen3 32B',
+        description: 'Qwen3 32B model',
       },
     ],
   },
   iflow: {
     provider: 'iflow',
     displayName: 'iFlow',
-    defaultModel: 'iflow-default',
+    defaultModel: 'qwen3-coder-plus',
     models: [
       {
-        id: 'iflow-default',
-        name: 'iFlow Default',
-        description: 'Default iFlow model',
+        id: 'qwen3-coder-plus',
+        name: 'Qwen3 Coder Plus',
+        description: 'Recommended default for iFlow accounts',
+        presetMapping: {
+          default: 'qwen3-coder-plus',
+          opus: 'qwen3-coder-plus',
+          sonnet: 'qwen3-coder-plus',
+          haiku: 'qwen3-coder-plus',
+        },
+      },
+      {
+        id: 'qwen3-max',
+        name: 'Qwen3 Max',
+        description: 'Flagship Qwen model via iFlow',
+      },
+      {
+        id: 'kimi-k2',
+        name: 'Kimi K2',
+        description: 'Kimi model currently available via iFlow',
+      },
+      {
+        id: 'deepseek-v3.2',
+        name: 'DeepSeek V3.2',
+        description: 'Current DeepSeek V3.2 model via iFlow',
+      },
+      {
+        id: 'deepseek-r1',
+        name: 'DeepSeek R1',
+        description: 'Reasoning-focused DeepSeek model',
+      },
+      {
+        id: 'glm-4.6',
+        name: 'GLM 4.6',
+        description: 'Zhipu GLM 4.6 via iFlow',
+      },
+      {
+        id: 'qwen3-vl-plus',
+        name: 'Qwen3 VL Plus',
+        description: 'Vision-language model',
+      },
+    ],
+  },
+  kimi: {
+    provider: 'kimi',
+    displayName: 'Kimi (Moonshot)',
+    defaultModel: 'kimi-k2.5',
+    models: [
+      {
+        id: 'kimi-k2.5',
+        name: 'Kimi K2.5',
+        description: 'Latest multimodal model (262K context)',
+        presetMapping: {
+          default: 'kimi-k2.5',
+          opus: 'kimi-k2.5',
+          sonnet: 'kimi-k2-thinking',
+          haiku: 'kimi-k2',
+        },
+      },
+      {
+        id: 'kimi-k2-thinking',
+        name: 'Kimi K2 Thinking',
+        description: 'Extended reasoning model',
+        presetMapping: {
+          default: 'kimi-k2-thinking',
+          opus: 'kimi-k2.5',
+          sonnet: 'kimi-k2-thinking',
+          haiku: 'kimi-k2',
+        },
+      },
+      {
+        id: 'kimi-k2',
+        name: 'Kimi K2',
+        description: 'Flagship coding model',
       },
     ],
   },
@@ -317,9 +444,22 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
     defaultModel: 'claude-sonnet-4-5-20250929',
     models: [
       {
+        id: 'claude-opus-4-6',
+        name: 'Claude Opus 4.6',
+        description: 'Latest flagship model',
+        extendedContext: true,
+        presetMapping: {
+          default: 'claude-opus-4-6',
+          opus: 'claude-opus-4-6',
+          sonnet: 'claude-sonnet-4-5-20250929',
+          haiku: 'claude-haiku-4-5-20251001',
+        },
+      },
+      {
         id: 'claude-opus-4-5-20251101',
         name: 'Claude Opus 4.5',
         description: 'Most capable Claude model',
+        extendedContext: true,
         presetMapping: {
           default: 'claude-opus-4-5-20251101',
           opus: 'claude-opus-4-5-20251101',
@@ -331,6 +471,7 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         id: 'claude-sonnet-4-5-20250929',
         name: 'Claude Sonnet 4.5',
         description: 'Balanced performance and speed',
+        extendedContext: true,
         presetMapping: {
           default: 'claude-sonnet-4-5-20250929',
           opus: 'claude-opus-4-5-20251101',
@@ -342,6 +483,7 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         id: 'claude-sonnet-4-20250514',
         name: 'Claude Sonnet 4',
         description: 'Previous generation Sonnet',
+        extendedContext: true,
         presetMapping: {
           default: 'claude-sonnet-4-20250514',
           opus: 'claude-opus-4-5-20251101',
