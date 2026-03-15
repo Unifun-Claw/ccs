@@ -79,7 +79,7 @@ docker run -d \
   -e CCS_PROXY_PORT=443 \
   -e CCS_PROXY_PROTOCOL="https" \
   -v ccs_home:/home/node/.ccs \
-  ccs-dashboard:latest
+  ghcr.io/kaitranntt/ccs-dashboard:latest
 ```
 
 ## Useful Commands
@@ -125,7 +125,7 @@ docker run -d \
   -p 3000:3000 \
   -p 8317:8317 \
   -v ccs_home:/home/node/.ccs \
-  ccs-dashboard:latest
+  ghcr.io/kaitranntt/ccs-dashboard:latest
 ```
 
 Docker Compose includes default limits (1GB RAM, 2 CPUs). Adjust in `docker-compose.yml` under `deploy.resources`.
