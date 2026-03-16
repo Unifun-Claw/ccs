@@ -32,7 +32,7 @@ Calibrate review depth based on PR scope. DO NOT give a trivial typo fix the sam
 - Full adversarial analysis across all checklist areas.
 
 **Deep review** (ANY of these conditions):
-- Files in: auth/, middleware/, security/, crypto/, commands/, shared/
+- Files in: auth/, middleware/, security/, crypto/, commands/, shared/, .github/workflows/
 - New dependencies added (package.json/lockfile changed)
 - CI/CD workflow files changed
 - Environment variables added/changed

@@ -187,7 +187,7 @@ jobs:
         run: |
           PROMPT_FILE=".github/review-prompt.md"
           if [ ! -f "$PROMPT_FILE" ]; then
-            echo "::warning::review-prompt.md not found — using fallback prompt"
+            echo "::warning::.github/review-prompt.md not found — using fallback prompt"
             PROMPT_FILE=""
           fi
           DELIMITER="REVIEW_PROMPT_$(openssl rand -hex 16)"
