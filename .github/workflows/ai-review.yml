@@ -184,20 +184,23 @@ jobs:
 
       - name: Load review prompt
         id: review-prompt
+        env:
+          CONTRIBUTOR_SOURCE: ${{ needs.prepare.outputs.contributor_source }}
+          BASE_REF: ${{ github.base_ref || 'dev' }}
         run: |
-          PROMPT_FILE=".github/review-prompt.md"
-          if [ ! -f "$PROMPT_FILE" ]; then
-            echo "::warning::.github/review-prompt.md not found — using fallback prompt"
-            PROMPT_FILE=""
+          # Always load prompt from base branch to prevent PR-controlled prompt injection.
+          # External PRs could modify review-prompt.md to suppress security findings.
+          PROMPT_CONTENT=""
+          git fetch origin "$BASE_REF" --depth=1 2>/dev/null || true
+          PROMPT_CONTENT=$(git show "origin/${BASE_REF}:.github/review-prompt.md" 2>/dev/null || echo "")
+          if [ -z "$PROMPT_CONTENT" ]; then
+            echo "::warning::.github/review-prompt.md not found on base branch ${BASE_REF} — using fallback"
+            PROMPT_CONTENT="You are a red-team code reviewer. Find every way this code can fail, be exploited, or produce incorrect results. Flag security issues, logic errors, missing error handling, race conditions, and injection risks. Follow the repository CLAUDE.md for project-specific guidelines. Output findings grouped by severity: High (must fix), Medium (should fix), Low (track). Use strict approval criteria."
           fi
           DELIMITER="REVIEW_PROMPT_$(openssl rand -hex 16)"
           {
             echo "content<<${DELIMITER}"
-            if [ -n "$PROMPT_FILE" ]; then
-              cat "$PROMPT_FILE"
-            else
-              echo "Perform a thorough code review. Flag security issues, logic errors, and missing error handling. Follow the repository CLAUDE.md for project-specific guidelines."
-            fi
+            printf '%s\n' "$PROMPT_CONTENT"
             echo "${DELIMITER}"
           } >> "$GITHUB_OUTPUT"
 
