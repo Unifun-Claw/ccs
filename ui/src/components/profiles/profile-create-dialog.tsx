@@ -725,12 +725,17 @@ function CompactPresetCard({
       </div>
 
       <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex items-start justify-between gap-2">
-          <div className="truncate text-sm font-semibold leading-tight">{preset.name}</div>
+        <div className="space-y-1">
+          <div
+            className="text-sm font-semibold leading-tight"
+            style={{ ...CARD_META_CLAMP_STYLE, WebkitLineClamp: 2 }}
+          >
+            {preset.name}
+          </div>
           {preset.badge && (
             <Badge
               variant="secondary"
-              className="shrink-0 bg-muted px-1.5 py-0 text-[10px] text-muted-foreground"
+              className="inline-flex bg-muted px-1.5 py-0 text-[10px] text-muted-foreground"
             >
               {preset.badge}
             </Badge>
