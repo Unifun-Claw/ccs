@@ -4,12 +4,16 @@
 
 ## Testing
 
+Use what applies. If you skipped something, add a short note instead of forcing it.
+
 - [ ] `bun run validate`
 - [ ] `bun run validate:ci-parity`
 - [ ] `cd ui && bun run validate` if UI changed
 - [ ] Not run
 
 ## Checklist
+
+Check what applies. Not every item is relevant for every PR.
 
 - [ ] Base branch is `dev` unless this is an approved hotfix
 - [ ] Branch name follows `feat/*`, `fix/*`, `docs/*`, or approved hotfix naming

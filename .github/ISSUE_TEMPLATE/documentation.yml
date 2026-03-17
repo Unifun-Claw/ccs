@@ -4,6 +4,10 @@ title: "docs: "
 labels:
   - documentation
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Small or rough documentation reports are welcome. You do not need to fill every field.
   - type: dropdown
     id: area
     attributes:
@@ -15,8 +19,6 @@ body:
         - Command help output
         - Dashboard copy or labels
         - Other
-    validations:
-      required: true
   - type: input
     id: location
     attributes:
@@ -41,4 +43,3 @@ body:
       label: Before submitting
       options:
         - label: I checked whether this is already covered elsewhere in the repo.
-          required: true

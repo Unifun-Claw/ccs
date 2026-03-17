@@ -7,7 +7,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting this. Keep the report concrete and reproducible.
+        Thanks for reporting this. Use as much of this template as you can.
+        A partial but useful report is better than no report.
   - type: dropdown
     id: area
     attributes:
@@ -20,8 +21,6 @@ body:
         - Provider integration
         - Install or packaging
         - Documentation
-    validations:
-      required: true
   - type: textarea
     id: summary
     attributes:
@@ -34,33 +33,25 @@ body:
     id: reproduction
     attributes:
       label: Reproduction steps
-      description: Exact steps, commands, inputs, and settings needed to reproduce.
+      description: Exact steps are ideal, but rough steps are still helpful.
       placeholder: |
         1. Run `ccs ...`
         2. Open ...
         3. Observe ...
-    validations:
-      required: true
   - type: textarea
     id: expected
     attributes:
       label: Expected behavior
-    validations:
-      required: true
   - type: textarea
     id: actual
     attributes:
       label: Actual behavior
-    validations:
-      required: true
   - type: input
     id: version
     attributes:
       label: CCS version
-      description: Output of `ccs --version`
+      description: Output of `ccs --version`, if you have it
       placeholder: 7.54.0
-    validations:
-      required: true
   - type: dropdown
     id: os
     attributes:
@@ -70,8 +61,6 @@ body:
         - Linux
         - Windows
         - Other
-    validations:
-      required: true
   - type: textarea
     id: environment
     attributes:
@@ -94,8 +83,5 @@ body:
       label: Before submitting
       options:
         - label: I searched existing issues first.
-          required: true
         - label: I removed secrets and private data from logs/screenshots.
-          required: true
         - label: I can still reproduce this on the latest released or dev build.
-          required: false

@@ -8,6 +8,7 @@ body:
     attributes:
       value: |
         Feature requests land faster when they describe the user problem first and stay narrow.
+        Rough ideas are still welcome if they are grounded in a real workflow or pain point.
   - type: dropdown
     id: area
     attributes:
@@ -20,8 +21,6 @@ body:
         - Install or packaging
         - Documentation
         - Contributor workflow
-    validations:
-      required: true
   - type: textarea
     id: problem
     attributes:
@@ -32,10 +31,8 @@ body:
   - type: textarea
     id: proposal
     attributes:
-      label: Proposed solution
+      label: Proposed solution or direction
       placeholder: Add a command or dashboard control that ...
-    validations:
-      required: true
   - type: textarea
     id: user-flow
     attributes:
@@ -64,6 +61,4 @@ body:
       label: Before submitting
       options:
         - label: I searched existing issues and discussions first.
-          required: true
         - label: This request describes a concrete user problem, not just a broad idea dump.
-          required: true

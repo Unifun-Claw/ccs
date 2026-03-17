@@ -4,7 +4,7 @@ CCS is a Bun + TypeScript CLI with a React dashboard. This guide is the shortest
 
 ## Before You Start
 
-- Open or claim an issue if the change is more than a typo.
+- An issue is helpful for medium or large changes, but small fixes and docs updates can go straight to a PR.
 - Branch from `dev`.
 - Open PRs against `dev`.
 - Use conventional commits.
@@ -116,7 +116,7 @@ Use `bun run dev` from the repo root when working on the local dashboard experie
 
 ## Validation
 
-Run these before you open or update a PR:
+If you can, run these before you open or update a PR:
 
 ```bash
 bun run format
@@ -144,6 +144,8 @@ bun run test:e2e
 
 `bun run validate` is the main gate. It covers typechecking, linting, format checks, maintainability checks, and automated tests for the main project.
 
+If you cannot run the full suite, that is still fine for early or docs-only PRs. Just say what you did run, or what blocked you, in the PR.
+
 ## What To Update With Your Change
 
 ### If you change CLI behavior
@@ -165,7 +167,7 @@ bun run test:e2e
 
 ## Commit Style
 
-All commits must use conventional commit format.
+CCS uses conventional commits because the release and workflow tooling depend on them.
 
 ```bash
 git commit -m "fix(doctor): handle missing config gracefully"
